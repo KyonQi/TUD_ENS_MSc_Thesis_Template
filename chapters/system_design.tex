@@ -1,4 +1,31 @@
 \chapter{System Design}
 \label{chp:system_design}
 
-This is a test for system design chapter.
+
+\section{Overview}
+In this section, we will discuss the implementation details of our system. We will cover the architecture, technologies used, and the steps taken to bring the design to life.
+
+\section{System Architecture}
+Our system is designed as a distributed architecture to ensure scalability and reliability. The architecture consists of multiple components that communicate with each other over a network. Each component is responsible for specific tasks, and they work together to achieve the overall functionality of the system. The main components include:
+
+
+\section{Block-wise Local Execution}
+To optimize performance and resource utilization, we have implemented a block-wise local execution strategy. This approach allows us to process data in smaller chunks, reducing memory overhead and improving execution speed. Each block is processed independently, allowing for parallel execution and better load balancing across the system. This design choice also enhances fault tolerance, as failures in one block do not affect the processing of others.
+
+\section{Overlap-ratio Cost Model}
+We have implemented a hybrid scheduling mechanism that combines the benefits of both centralized and decentralized approaches. This allows for more efficient resource allocation and load balancing across the system.
+
+\section{Cross-block Data Reuse}
+To further optimize performance, we have implemented a cross-block data reuse mechanism. This allows data generated in one block to be efficiently utilized in subsequent blocks, reducing redundant computations and improving overall system efficiency.
+
+\subsection{Conditions}
+Some conditions for cross-block data reuse include:
+\begin{itemize}
+    \item Data must be compatible across blocks.
+    \item The data must be stored in a format that allows for easy retrieval and reuse.
+    \item The system must ensure that the reused data is up-to-date and valid for the current block's processing requirements.
+\end{itemize}
+
+
+
+
