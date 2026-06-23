@@ -37,10 +37,50 @@ To address this, we implement an end-to-end pipeline for distributed inference a
 \section{Offline Preprocessing}
 \label{sec:offline-preprocessing}
 
+The offline preprocessing stage employs a trained model for efficient distributed execution on resource-constrained MCUs. It quantizes the model weights and activations to 8-bit integers, extracts the per-layer metadata required at runtime, and compiles a precomputed communication-aware execution plan. The online inference therefore stays simple and makes no global decisions at runtime.
+
 
 \subsection{Quantization}
+Quantization is a significant step in the offline preprocessing stage, as it reduces the model size and memory footprint, enabling efficient execution on resource-constrained MCUs. We employ an 8-bit post-training quantization (PTQ (refs)) with an asymmetric scheme: activations are stored as \verb|uint8|, weights as \verb|int8|, and biases as \verb|int32| with a separate scale per output channel for the weights. For a convolutional layer, the integer accumulator and the requantized output are computed as follows:
+
+\begin{align}
+    \mathrm{acc} &= \sum(x_q - z_{\mathrm{in}})(w_q-z_w)+b_{\mathrm{int32}}, \label{eq:quantized-acc}\\
+    y_q &= \mathrm{clip}(\mathrm{round}(\mathrm{acc} \cdot m + z_{\mathrm{out}}), 0, 255), \label{eq:quantized-y}\\
+    m &= \frac{s_{\mathrm{in}}s_w}{s_{\mathrm{out}}}, \label{eq:quantized-multiplier}
+\end{align}
+where $(s,z)$ denotes the scale and zero-point of the input, weight, and output tensors respectively. The multiplier $m$ is precomputed and stored per output channel. The quantization parameters are calibrated on a small number of representative samples. 
+
+\textcolor{red}{For every layer of CNNs, the scales, zero-points, and the precomputed multipliers, together with the structural metadata (e.g., layer type, input/output channels, kernel size, residual links between layers, etc.) are extracted and serialized into a JSON file. It is consumed by the coordinator and as C++ headers into each worker's Flash.}
 
 \subsection{Planner}
+The planner compiles the quantized model graph into a communication-aware execution plan. For each block of layers, it decides whether the block can be partially executed locally by the workers as a single unit, or have to fall back to a layer-wise strategy (Section~\ref{sec:block-wise-local-execution}), and whether the block's output feature map could be safely reused by the next block (Section~\ref{sec:cross-block-data-reuse}). These decisions are determined offline and will be strictly followed at runtime. Algorithm~\ref{alg:xx} summarizes the workflow both in the offline preprocessing stage and the online inference stage.
+
+% maybe add more contents to the planner
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 \section{Online Inference}
