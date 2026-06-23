@@ -1,12 +1,40 @@
 \chapter{System Design}
 \label{chp:system_design}
-
-
-\section{Overview}
-In this section, we will discuss the implementation details of our system. We will cover the architecture, technologies used, and the steps taken to bring the design to life.
+In this section, we will present the design of our framework that transforms a standard single-device CNN into a communication-efficient distributed execution tasks across a cluster of networked MCUs. We will first discuss the overall architecture of coordinator-worker model, followed by the communication protocols. Two core optimizations techniques, i.e., \emph{block-wise local execution} and \emph{cross-block data reuse}, are proposed to allieviate the communication overhead, and will be discussed in detail. \textcolor{red}{We analyze the conditions for our proposed optimizations.} 
+% and provide a cost model to evaluate the trade-offs between communication and computation. Finally, we will discuss the implementation details of our framework.
 
 \section{System Architecture}
-Our system is designed as a distributed architecture to ensure scalability and reliability. The architecture consists of multiple components that communicate with each other over a network. Each component is responsible for specific tasks, and they work together to achieve the overall functionality of the system. The main components include:
+\label{sec:system-architecture}
+As discussed in Section~\ref{chp:system_design}, a typical MCU offers only hundreds of KBs of SRAM (e.g., less than 512~KB) during runtime inference. While the model weights could be stored in the Flash memory, the intermediate activations have to reside in the SRAM at runtime, resulting in a significant memory bottleneck. 
+
+To address the issue, we implement a end-to-end pipeline shown in Figure~\ref{fig:tbd} that incorporates:
+\begin{itemize}
+    \item \textbf{Offline preprocessing stage} that quantizes the model, and extracts the metadata for the model weights and intermediate activations. The metadata will be released as JSON files and serialized into the Flash memory of each MCU at compilation time. An \emph{execution plan} will be generated to describe inference strategy and the data flow between the MCUs. 
+    
+    \item \textbf{Online inference stage} that executes the model in the distributed system across multiple networked MCUs. A single \emph{coordinator} holds the model metadata and the execution plan, partitions the workload to the \emph{workers} at each step, and reassables the workers' outputs to produce the final inference result. Each \emph{worker} stores its share of the weights and activations and performs the assigned computation tasks. The coordinator and workers communicate through a lightweight protocol under TCP/IP. 
+\end{itemize}
+
+\section{Offline Preprocessing}
+\label{sec:offline-preprocessing}
+
+Something about the offline preprocessing stage, including model quantization, metadata extraction, and execution plan generation. This stage is crucial for preparing the model for efficient distributed execution on resource-constrained MCUs.
+
+\subsection{Quantization}
+
+\subsection{Planner}
+
+
+\section{Online Inference}
+\label{sec:online-inference}
+The coordinator-worker architecture is designed to execute the distributed inference tasks efficiently. As demonstrated in Figure~\ref{fig:tbd}, a coordinator is responsbile for the task scheduling and data aggregation. Based on the execution plan, the coordinator partitions the input activations, wraps and assigns the computation tasks to workers, and gather results from workers to produce the output activations. Each worker is in charge of executing the assigned tasks, which includes loading model weights in Flash, selecting the suitable computation kernel, and performing the computation on the input activations.
+
+\subsection{Coordinator Design}
+
+\subsection{Worker Design}
+
+\subsection{Protocol Design}
+
+
 
 
 \section{Block-wise Local Execution}
