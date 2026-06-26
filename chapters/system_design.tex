@@ -54,40 +54,35 @@ where $(s,z)$ denotes the scale and zero-point of the input, weight, and output 
 
 \subsection{Planner}
 The planner compiles the quantized model graph into a communication-aware execution plan. For each block of layers, it decides whether the block can be partially executed locally by the workers as a single unit, or have to fall back to a layer-wise strategy (Section~\ref{sec:block-wise-local-execution}), and whether the block's output feature map could be safely reused by the next block (Section~\ref{sec:cross-block-data-reuse}). These decisions are determined offline and will be strictly followed at runtime. Algorithm~\ref{alg:xx} summarizes the workflow both in the offline preprocessing stage and the online inference stage.
-
+\textcolor{red}{add more contents to the planner}
 % maybe add more contents to the planner
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 \section{Online Inference}
 \label{sec:online-inference}
 The coordinator-worker architecture is designed to execute the distributed inference tasks efficiently. As demonstrated in Figure~\ref{fig:tbd}, a coordinator is responsbile for the task scheduling and data aggregation. Based on the execution plan, the coordinator partitions the input activations, wraps and assigns the computation tasks to workers, and gather results from workers to produce the output activations. Each worker is in charge of executing the assigned tasks, which includes loading model weights in Flash, selecting the suitable computation kernel, and performing the computation on the input activations.
 
 \subsection{Coordinator Design}
+\textcolor{red}{Add a figure to illustrate the components in coordinator}
+The coordinator is an event-driven server, built on an asynchronous I/O event loop to handle multiple concurrent connections from workers. As shown in Figure~\ref{fig:tbd}, it is organized into a set of decoupled components, including:
+\begin{itemize}
+    \item \textbf{Worker manager}: It maintains the connection state of each worker, containing the network connections and the message framing;
+    \item \textbf{Inference engine}: It drives the execution based on the preprocessed plan, abd holds all inference states;
+    \item \textbf{Task distributor}: It performs the splitting of workload and the communication with workers. Tasks are assigned to workers with a pluggable \emph{strategy mapper} that supplies the block grouping decided offline.
+\end{itemize}
+
+The design principle of the coordinator is to abstract the independent components and provide a unified interface for the inference engine to drive the execution. The inference engine is agnostic to \emph{how} tasks reach workers, which is the distributor's responsibility, and to \emph{how} layers are grouped into blocks, which is the strategy mapper's responsibility. This decoupling design allows for flexibility in the implementation of the coordinator. A single engine could easily support different models on different number of workers, and different strategies for block grouping and task distribution. \textcolor{red}{Maybe need to rephrase it.}
+
+\paragraph{Connection Manager.}
+
+\paragraph{Inference Engine.}
+
+\paragraph{Task Distribution.} The task distributor carries out the splitting of workload and the communication with workers. Compared with the \emph{inference engine}, it is stateless with respect to the inference process. Consider a layer (or block) that consumes a feature map of shape $(C,H,W)$, where $C$ is the number of channels, $H$ is the height, and $W$ is the width, and whose convolution has kernel size $k$, stride $s$, and padding $p$. The output height of this layer is
+\begin{equation}
+    H_{\mathrm{out}} = \left\lfloor \frac{H + 2p - k}{s} \right\rfloor + 1,
+\end{equation}
+and the output width $W_{\mathrm{out}}$ is computed similarly. 
+
+
 
 \subsection{Worker Design}
 
