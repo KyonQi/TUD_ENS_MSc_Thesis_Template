@@ -82,6 +82,21 @@ The design principle of the coordinator is to abstract the independent component
 \end{equation}
 and the output width $W_{\mathrm{out}}$ is computed similarly. 
 
+The distributor splits the $H_{\mathrm{out}}$ output rows into $N$ chunks, where $N$ is the number of workers. Worker $i$ is therefore produces the output rows $[o_s^i, o_e^i)$, where the start and end rows are computed as:
+\begin{align}
+    o_s^i &= i\left\lceil \frac{ H_{\mathrm{out}}}{N} \right\rceil, \\
+    o_e^i &= \min\left((i+1)\left\lceil \frac{ H_{\mathrm{out}}}{N} \right\rceil, H_{\mathrm{out}}\right).
+\end{align}
+
+Due to the nature of convolution, the input rows required by worker $i$ have to extend beyond the output row band. For each worker, the range of input rows $[i_s^i, i_e^i)$ is computed as:
+\begin{align}
+    i_s^i &= \max\left(o_s^i s - p, 0\right), \\
+    i_e^i &= \min\left(o_e^i s - p + k, H\right).
+\end{align}  
+
+
+
+
 
 
 \subsection{Worker Design}
