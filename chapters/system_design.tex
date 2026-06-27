@@ -72,11 +72,21 @@ The coordinator is an event-driven server, built on an asynchronous I/O event lo
 
 The design principle of the coordinator is to abstract the independent components and provide a unified interface for the inference engine to drive the execution. The inference engine is agnostic to \emph{how} tasks reach workers, which is the distributor's responsibility, and to \emph{how} layers are grouped into blocks, which is the strategy mapper's responsibility. This decoupling design allows for flexibility in the implementation of the coordinator. A single engine could easily support different models on different number of workers, and different strategies for block grouping and task distribution. \textcolor{red}{Maybe need to rephrase it.}
 
-\paragraph{Connection Manager.}
+\paragraph{Connection Manager.} 
+The worker manager abstracts the network transport from the rest of the system. When a worker tries to connect to the coordinator, it will first go through a short registration handshake defined in the application layer. The worker needs to announce itself and provide its clock frequency, so the coordinator can reply with an assigned unique worker ID. \textcolor{red}{Each connection is tracked by a state machine that handles the connection state and the message framing.} Idle workers are kept in a queue from which the engine draws when dispatching the next round of tasks. \textcolor{red}{Nagle's algorithm is
+disabled on each connection so that small task descriptors are sent without delay.}
 
-\paragraph{Inference Engine.}
 
-\paragraph{Task Distribution.} The task distributor carries out the splitting of workload and the communication with workers. Compared with the \emph{inference engine}, it is stateless with respect to the inference process. Consider a layer (or block) that consumes a feature map of shape $(C,H,W)$, where $C$ is the number of channels, $H$ is the height, and $W$ is the width, and whose convolution has kernel size $k$, stride $s$, and padding $p$. The output height of this layer is
+Connection manager is responsible for establishing and maintaining the TCP connections with workers. It maintains and hadles the connection state of each worker, including the network connections and the message framing. It also provides a unified interface for the inference engine to send and receive messages to/from workers. The connection manager is designed to be robust and fault-tolerant, handling worker disconnections and reconnections gracefully.
+
+\paragraph{Inference Engine.} 
+The inference engine is a stateful core of the coordinator, which drives the execution of the inference plan. It maintains the state of the inference process, including the current layer/block being executed, the input/output activations, and the intermediate results. 
+
+\textcolor{red}{Figure~\ref{fig:tbd} illustrates the state machine of the inference engine.}  Upon finishing the TCP handshake with the worker, the engine transitions to the \emph{WAIT} state, waiting for applicatin confirmation from the worker. Once the worker is ready and sends a \emph{READY} message, the engine immediately wrapps and sends the first task to the worker, and transitions to the \emph{IDLE} state, waiting for the \emph{Result} defined in the protocol. Upon receiving the result, the engine updates the inference state and sends the next task to the worker. The engine continues this process until all tasks are completed, and transitions back to the \emph{IDLE} state, waiting for the next inference request. The engine also handles error conditions, such as worker disconnections or timeouts, and can retry or reassign tasks as needed.
+
+
+\paragraph{Task Distribution.} 
+The task distributor carries out the splitting of workload and the communication with workers. Compared with the \emph{inference engine}, it is stateless with respect to the inference process. Consider a layer (or block) that consumes a feature map of shape $(C,H,W)$, where $C$ is the number of channels, $H$ is the height, and $W$ is the width, and whose convolution has kernel size $k$, stride $s$, and padding $p$. The output height of this layer is
 \begin{equation}
     H_{\mathrm{out}} = \left\lfloor \frac{H + 2p - k}{s} \right\rfloor + 1,
 \end{equation}
@@ -93,6 +103,14 @@ Due to the nature of convolution, the input rows required by worker $i$ have to 
     i_s^i &= \max\left(o_s^i s - p, 0\right), \\
     i_e^i &= \min\left(o_e^i s - p + k, H\right).
 \end{align}  
+
+\textcolor{red}{Therefore, two adjacent workers $i$ and $i+1$ have overlapping input rows bounded by $k-s$ rows.} It is the redundant computation overhead that will be further discussed in Section~\ref{sec:overlap-ratio-cost-model}. 
+
+For the fully connected layer, the distributor simply splits the the layer by output class with $N$ chunks and assigns worker $i$ to compute the output classes $[o_s^i, o_e^i)$, where
+\begin{align}
+    o_s^i &= i\left\lceil \frac{ C_{\mathrm{out}}}{N} \right\rceil, \\
+    o_e^i &= \min\left((i+1)\left\lceil \frac{ C_{\mathrm{out}}}{N} \right\rceil, C_{\mathrm{out}}\right).
+\end{align}
 
 
 
