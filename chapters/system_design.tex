@@ -112,14 +112,19 @@ For the fully connected layer, the distributor simply splits the the layer by ou
     o_e^i &= \min\left((i+1)\left\lceil \frac{ C_{\mathrm{out}}}{N} \right\rceil, C_{\mathrm{out}}\right).
 \end{align}
 
-
-
-
-
-
 \subsection{Worker Design}
+\textcolor{red}{Could draw a workflow fig with the stick one.} A worker is a executor driven entirely by the task it receives from the coordinator. As shown in Figure~\ref{fig:tbd}, upon receiving a task, it
+\begin{enumerate}
+    \item reconstructs the input activations from the received data, and loads the corresponding weights from Flash;
+    \item selects the appropriate computation kernel based on the layer type and available memory resources;
+    \item returns the computed output activations to the coordinator, and waits for the next task.
+\end{enumerate}
+
+\textcolor{red}{Communication overhead between the coordinator and workers is the main bottleneck of the system. To alleviate this, we have implemented two core optimization techniques: \emph{block-wise local execution} and \emph{cross-block data reuse}. We will discuss these techniques in detail in the following sections, along with the conditions under which they can be applied and their impact on system performance.}
 
 \subsection{Protocol Design}
+
+
 
 
 
