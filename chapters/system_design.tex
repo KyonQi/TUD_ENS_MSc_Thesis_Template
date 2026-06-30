@@ -156,6 +156,8 @@ Since the output activation is typically much smaller than the expanded activati
 \Delta = \frac{\mathcal{M}^{\mathrm{block}}_{\mathrm{coord}}(B)}{\mathcal{M}^{\mathrm{layer}}_{\mathrm{coord}}(B)} \approx \frac{1}{e}.
 \end{equation}  
 
+Take the first IRB of MobileNetV2 as an instance, a layer-wise coordinator must hold the block input and the expanded activation, requiring $196$ KB $+$ $1176$ KB = $1372$ KB. With block-wise local execution, the coordinator only handles the block input and the projected output, reducing the footprint to $196$ KB $+$ $73.5$ KB $=$ $269.5$ KB, which is approximately $\frac{1}{e}$ ($e=6$) of the layer-wise strategy.
+
 
 \paragraph{Communication Saving.}
 \textcolor{red}{Maybe further discussed about the saving in mathmatical.}
@@ -163,7 +165,57 @@ Since the output activation is typically much smaller than the expanded activati
 
 \section{Overlap-ratio Cost Model}
 \label{sec:overlap-ratio-cost-model}
-We have implemented a hybrid scheduling mechanism that combines the benefits of both centralized and decentralized approaches. This allows for more efficient resource allocation and load balancing across the system.
+% We have implemented a hybrid scheduling mechanism that combines the benefits of both centralized and decentralized approaches. This allows for more efficient resource allocation and load balancing across the system.
+Block-wise local execution trades communication for computation, as each worker must compute the overlapping input rows required by its neighbors. Figure~\ref{fig:tbd} illustrates the overlapping input rows for two adjacent workers $i$ and $i+1$. The number of overlapping rows between two adjacent workers is determined by the kernel size $k$ and stride $s$ of the convolution, and is given by:
+\begin{equation}
+    R_{\mathrm{overlap}} = k - s.
+    \label{eq:overlap}
+\end{equation}
+
+\textcolor{red}{need to rephrase the whole.}
+Under layer-wise strategy, there is no redundant computation for the overlapping rows, since output rows are partitioned and assigned to workers only once. However, under block-wise local execution, although the output rows of projection layer are still partitioned and assigned to workers only once, each worker must compute the overlapped slice during the local execution of the depthwise convolution as shown in Figure~\ref{fig:tbd}. We capture this overlapped redundancy with the \emph{overlap ratio}:
+\begin{equation}
+    \rho = \frac{1}{H}\sum_{i=0}^{N-1}(y_e^i - y_s^i),
+    \label{eq:overlap-ratio}
+\end{equation}
+where $H$ is the height of the input feature map, $N$ is the number of workers, and $[y_s^i, y_e^i)$ is the input row range assigned to worker $i$. The overlap ratio $\rho$ represents the fraction of the input feature map that is redundantly computed by multiple workers. A higher overlap ratio indicates more redundant computation, which can offset the communication savings achieved by block-wise local execution. The ideal $\rho=1$ indicates there is no overlap among the workers, whereas $\rho\to N$ is the worst case where all workers has to contain the entire input feature map.
+
+Combined~(\ref{eq:overlap}) with~(\ref{eq:overlap-ratio}), we can express the overlap ratio as a function of the kernel size $k$, stride $s$, and the number of workers $N$:
+\begin{equation}
+    \rho(k, s, N) \approx 1 + \frac{(N-1)(k - s)}{H}.
+    \label{eq:overlap-ratio-func}
+\end{equation}
+
+(\ref{eq:overlap-ratio-func}) demonstrates three key factors that affect the overlap ratio: 
+\begin{itemize}
+    \item The number of workers $N$: $\rho$ grows with the worer count, indicating that finer partitioning of the input feature map leads to more overlap and redundant computation.
+    \item The kernel size $k$ and stride $s$: A larger kernel size or a smaller stride increases the number of overlapping rows due to the nature of the convolution, leading to a higher overlap ratio.
+    \item The height of the input feature map $H$: A taller input feature map reduces the overlap ratio, as the overlapping rows become a smaller fraction of the total input.
+\end{itemize}
+
+Therefore, the block-wise local execution effect is therefore strongly position-dependent. For an early high-resolution block where $H=112$ with a $3\times3$ depthwise kernel on $N=4$ workers, the overlap ratio is $\rho\approx 1.05$, indicating a nearly free gain. However, for a deep low-resolution block where $H=7$ with a larger $5\times5$ kernel on $N=4$ workers, the overlap ratio is $\rho\approx 2.7$, indicating a significant amount of redundant computation that can easily offset the communication savings.
+
+\paragraph{Adaptive selection.}
+This position dependence motivates us a per-block decision on whether to apply block-wise local execution or fall back to layer-wise strategy. (\ref{eq:model-selection}) formalizes our adaptive selection of execution mode for each block $B$ based on the overlap ratio $\rho(B)$ and a manual tunable threshold $\tau$. If the overlap ratio is below the threshold, we apply block-wise local execution; otherwise, we revert to layer-wise strategy. 
+\begin{equation}
+    mode(B) = \begin{cases}
+        \text{block-wise local execution}, & \text{if } \rho(B) \leq \tau, \\
+        \text{layer-wise strategy}, & \text{otherwise},
+    \end{cases}
+    \label{eq:model-selection}
+\end{equation}
+
+The threshold can be determined empirically based on the specific model architecture and hardware characteristics. We set $\tau=2$ on a four-worker cluster. A faster network prefers a smaller $\tau$, since communication is cheap and redundant expansion dominates the cost, while a bandwidth-constrained network prefers a larger $\tau$. 
+
+
+
+
+% (i) the kernel size $k$, (ii) the stride $s$, and (iii) the number of workers $N$. A larger kernel size or a smaller stride increases the number of overlapping rows, leading to a higher overlap ratio. Similarly, increasing the number of workers also increases the overlap ratio, as more workers share the same input feature map.
+
+
+
+
+
 
 \section{Cross-block Data Reuse}
 \label{sec:cross-block-data-reuse}
