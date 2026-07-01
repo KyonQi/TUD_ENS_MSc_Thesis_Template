@@ -212,24 +212,91 @@ The threshold can be determined empirically based on the specific model architec
 
 % (i) the kernel size $k$, (ii) the stride $s$, and (iii) the number of workers $N$. A larger kernel size or a smaller stride increases the number of overlapping rows, leading to a higher overlap ratio. Similarly, increasing the number of workers also increases the overlap ratio, as more workers share the same input feature map.
 
-
-
-
-
-
 \section{Cross-block Data Reuse}
 \label{sec:cross-block-data-reuse}
-To further optimize performance, we have implemented a cross-block data reuse mechanism. This allows data generated in one block to be efficiently utilized in subsequent blocks, reducing redundant computations and improving overall system efficiency.
+% To further optimize performance, we have implemented a cross-block data reuse mechanism. This allows data generated in one block to be efficiently utilized in subsequent blocks, reducing redundant computations and improving overall system efficiency.
+Block-wise local execution still leaves redundant communication between consecutive blocks. After a worker finishes block $b$, most of its output is exactly the data it needs to begin block $b+1$. A naive strategy returns this data back to the coordinator and immediately sends it back to the same worker again, wasting the limited bandwidth and inflating coordinator memory. To address this, we propose to reuse cross-block data. As illustrated in Figure~\ref{fig:tbd}, it keeps reusable data on the worker and exchanges only the small boundary region the next block requires.
+
+\textcolor{red}{Rephrase needed.} Rather than discarding its output once finished with block $b$, a worker caches the rows it produced for block $b$ in its local buffer. The interior rows of the output need not cross the network, since they are exactly the rows required by the next block $b+1$. The only data that must still move between two consecutive blocks is the thin boundary region that a worker's neighbor requires but does not produce itself.
+
+Concretely, consider worker $i$ needs input rows $[a_i, b_i)$ for block $b+1$, while it already caches rows $[s_i, e_i)$ from block $b$. The cached overlap is the intersection $[\max(a_i, s_i),\min(b_i, e_i))$, so the only rows worker $i$ lacks are the top and bottom boundary rows,
+\begin{equation}
+    \beta^i_{\mathrm{top}} = \max(0, s_i - a_i),
+    \qquad
+    \beta^i_{\mathrm{bot}} = \max(0, b_i - e_i),
+    \label{eq:boundary}
+\end{equation}
+which is produced by the neighbouring workers $i-1$ and $i+1$. 
+
+Therefore, on the downlink the coordinator forwards only the boundary rows each worker lacks instead of a full input patch. On the uplink a worker returns only the boundary rows its neighbours will need instead of its full output. The interior rows are never transmitted over the network, which significantly reduces the communication overhead between consecutive blocks. The coordinator now holds only boundaries and acts as a lightweight scheduler rather than a full data aggregator, lowering its peak memory footprint. 
 
 \section{Conditions to Enable Cross-block Data Reuse}
 \label{sec:cross-conditions}
-Some conditions for cross-block data reuse include:
-\begin{itemize}
-    \item Data must be compatible across blocks.
-    \item The data must be stored in a format that allows for easy retrieval and reuse.
-    \item The system must ensure that the reused data is up-to-date and valid for the current block's processing requirements.
-\end{itemize}
+% Some conditions for cross-block data reuse include:
+% \begin{itemize}
+%     \item Data must be compatible across blocks.
+%     \item The data must be stored in a format that allows for easy retrieval and reuse.
+%     \item The system must ensure that the reused data is up-to-date and valid for the current block's processing requirements.
+% \end{itemize}
+
+% \begin{table}[t]
+%     \centering
+%     \begin{tabular}{| >{\centering\arraybackslash}m{4.3cm} | >{\centering\arraybackslash}m{7.0cm} |}
+%         \hline
+%         \textbf{Reuse direction} & \textbf{Enabling condition} \\
+%         \hline \hline
+%         Coordinator $\rightarrow$ worker & Previous block has no residual connection. \\
+%         \hline
+%         Worker $\rightarrow$ coordinator & Current block has no residual connection, the next block neither caches nor consumes a residual, and the next block is spatial rather than fully connected. \\
+%         \hline
+%     \end{tabular}
+%     \caption{Conditions under which cross-block data reuse preserves correctness, decided offline and encoded in the per-worker manifests.}
+%     \label{tab:reuse-conditions}
+% \end{table}
+
+\begin{table}
+    \centering
+    \begin{tabular}{|>{\centering\arraybackslash}m{3.5cm}|m{7.0cm}|}
+        \hline
+        \textbf{Reuse direction} & \multicolumn{1}{c|}{\textbf{Enabling condition}} \\
+        \hline \hline
+        Coordinator $\rightarrow$ worker & Previous block has no residual connection. \\
+        \hline
+        Worker $\rightarrow$ coordinator &
+            \begin{itemize}[leftmargin=*, topsep=0pt, itemsep=1pt, nosep]
+                \item the current block has no residual connection;
+                \item the next block neither caches nor consumes a residual;
+                \item the next block is spatial rather than fully connected.
+            \end{itemize} \\
+        \hline
+    \end{tabular}
+\caption{Conditions to enable cross-block data reuse.}
+\label{tab:reuse-conditions}
+\end{table}
 
 
+Cross-block data reuse is employed only when it does not compromise the accuracy of the inference stage. The enabling conditions are evaluated in the offline preprocessing stage and encoded in the task metadata at runtime, so the workers simply follow the execution plan. There are two situations that make a worker's local data invalid to reuse.
+
+The first is the residual addition. When a block consumes a residual, the coordinator dequantizes the cached residual and the current block output, adds them together, and requantizes the sum in place as
+\begin{equation}
+    y = clip(round(\frac{(c-z_c)s_c+(r-z_r)s_r}{s_t} + z_t), 0, 255),
+\end{equation}
+where $(s,s_c,z_c)$ denotes the current block output with its scale and zero-point, and $(r,s_r,z_r)$ denotes the cached residual. This computation changes the cached data in the coordinator, while the worker's cache still holds the pre-residual output. Therefore, the worker's cache is invalid and cannot be reused for the next block. The following block must fall back to a full transfer that replaces the worker's cache with the coordinator's updated data.
+
+The second situation is global average polling together with the fully connected layer that consumes the pooled output. These operations squeeze the spatial dimensions of the feature map into a single value per channel, leaving no rows to reuse.
+
+As a result, we summarize the conditions that enable cross-block data reuse in Table~\ref{tab:reuse-conditions}. In practice, whether cross-block data reuse is enabled is determined by the architecture of the CNN. It is most valid on the early, high-resolution blocks where the boundary savings are also largest. 
 
 
+% \begin{table}[t]
+%     \centering
+%     \begin{tabular}{| l | c | r |}
+%     \hline
+%     left aligned & centred & right aligned \\
+%     \hline \hline
+%     12 & 34 & 56 \\
+%     \hline
+%     \end{tabular}
+%     \caption{Complete sentence describing the tabular data. Caption should summarize the conclusions of the result.}
+%     \label{tab:table_1}
+% \end{table}
