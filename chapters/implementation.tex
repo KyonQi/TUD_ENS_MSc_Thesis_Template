@@ -1,3 +1,45 @@
 \chapter{Implementation}
 \label{chp:implementation}
 
+\textcolor{red}{Need to rephrase}
+This chapter describes the implementation of the system design presented in Chapter~\ref{chp:system_design} on real hardware. The framework consists of two codebases. A Python codebase that implements the preprocessing toolchains and evaluation scripts, and a real deployment codebase that realizes an asynchrnous Python coordinator with a cluster of Teensy 4.1 workers written in C++. We first describe the hardware platform employed in the experiments in Section~\ref{sec:implementation-hardware-platform}. Section~\ref{sec:offline-preprocessing} describes the offline toolchains that compile a pretained model into manifests and firmware. Section~\ref{sec:implementation-worker-runtime} to section\ref{sec:implementation-communication-protocol} describe the runtime implementations of the coordinator and workers on the MCU. We further explains how we validate the numerical correctness of the system in Section~\ref{sec:implementation-validation}. Finally, we discuss some engineering details in Section~\ref{sec:implementation-miscellaneous}.
+
+
+\section{Hardware Platform}
+\label{sec:implementation-hardware-platform}
+Teensy 4.1 board is employed as the worker in our experiments. It is built with an NXP i.MX RT1062 microcontroller. The device has an Arm Cortex-M7 core running at 600 MHz with a hardware floating-point unit. The board has two 512 KB RAM and 8 MB Flash memory without a memory management unit. Network support is provided by an external Ethernet PHY chip with NativeEthernet library. The testbed connects up to six boards to a single TP-Link TL-SG116 gigabit switch. To simplify profiling and data collection, a Linux PC servers as the coordinator, while the worker-side execution runs on MCUs.
+
+\section{Offline Toochain}
+\label{sec:implementation-offline-toolchain}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\section{Coordinator Runtime}
+\label{sec:implementation-coordinator-runtime}
+
+\section{Worker Runtime}
+\label{sec:implementation-worker-runtime}
+
+\section{Communication Protocol}
+\label{sec:implementation-communication-protocol}
+
+
+\section{Validation}
+\label{sec:implementation-validation}
+
+\section{Miscellaneous}
+\label{sec:implementation-miscellaneous}
+
