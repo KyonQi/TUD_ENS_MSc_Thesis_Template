@@ -67,47 +67,30 @@ The communication overhead dominates these layers in the baseline system. The co
 
 \emph{Ours} significantly reduces the communication overhead. Our block-wise local execution keeps the expanded activation inside the worker so that it never needs to cross the network. Our cross-block data reuse only requires the communication of the thin boundary rows between adjacent workers. Therefore, the per-block communication latency falls to a few milliseconds. On the first IRB of ProxylessNAS, the latency reduction is approximately 94\%. \emph{Ours} consistently outperforms the baseline across all models and layers, demonstrating the effectiveness of our framework in reducing communication overhead.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 \section{End-to-end Inference Latency}
 \label{sec:eval-end2end-infer-latency}
+Figure~\ref{fig:tbd} shows the end-to-end inference latency as the number of workers increases across different models. At four workers, \emph{ours} consistently outperforms the baseline. It reduces the latency of MobileNetV2-0.35 from 459 ms to 321 ms, MnasNet-0.5 from 920 ms to 486 ms, MCUNet-in4 from 938 ms to 552 ms, and ProxylessNAS from 1862 ms to 1174 ms, achieving a reduction between 30\% and 47\%. The saving is largest on the models that move the most intermediate data. These benefits come from eliminating communication with two mechanisms discussed above.
 
+Another interesting observation is that although the end-to-end inference latency falls as workers are added, it yields diminishing returns. Based on Amdahl's law, there is a growing fraction of time that does not support parallelization, such as the fixed per-round communication overhead and the coordinator's aggregation of results. Hence, the curves flatten as the number of workers increases, and the benefit of a fifth or sixth worker is modest compared with the number from two to four. 
 
 \section{Peak Memory}
 \label{sec:eval-peak-memory}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 \section{Ablation Study}
 \label{sec:eval-ablation-study}
