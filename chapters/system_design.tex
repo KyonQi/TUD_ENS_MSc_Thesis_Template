@@ -62,6 +62,7 @@ The planner compiles the quantized model graph into a communication-aware execut
 The coordinator-worker architecture is designed to execute the distributed inference tasks efficiently. As demonstrated in Figure~\ref{fig:tbd}, a coordinator is responsbile for the task scheduling and data aggregation. Based on the execution plan, the coordinator partitions the input activations, wraps and assigns the computation tasks to workers, and gather results from workers to produce the output activations. Each worker is in charge of executing the assigned tasks, which includes loading model weights in Flash, selecting the suitable computation kernel, and performing the computation on the input activations.
 
 \subsection{Coordinator Design}
+\label{sec:coordinator-design}
 \textcolor{red}{Add a figure to illustrate the components in coordinator}
 The coordinator is an event-driven server, built on an asynchronous I/O event loop to handle multiple concurrent connections from workers. As shown in Figure~\ref{fig:tbd}, it is organized into a set of decoupled components, including:
 \begin{itemize}
