@@ -7,38 +7,96 @@ In this section, we evaluate the performance of our framework on real hardware. 
 \section{Experiment Setup}
 \label{sec:eval-exp-setup}
 
-\begin{table}[t]
-    \centering
-    \caption{Evaluated models. All are built from inverted residual blocks and
-    quantised to INT8. The last column is the peak activation footprint a single MCU would need, which exceeds the SRAM of a Teensy 4.1 in every case.}
-    \label{tab:eval-models}
-    \begin{tabular}{l c c c c}
-        \hline
-        \textbf{Model} & \textbf{Input} & \textbf{Expansion} & \textbf{DW kernel} &
-        \textbf{Peak mem.} \\
-        \hline
-        MobileNetV2-0.35 & $224^2$ & 6 & 3 & 735~KB \\
-        MnasNet-0.5 & $224^2$ & 3 to 6 & 3, 5 & 392~KB \\
-        MCUNet-in4 & $160^2$ & 3 to 5 & 3, 5, 7 & 400~KB \\
-        ProxylessNAS & $224^2$ & 3 to 6 & 3, 5, 7 & 784~KB \\
-        \hline
-    \end{tabular}
-\end{table}
+% \begin{table}[t]
+%     \centering
+%     \caption{Evaluated models. All are built from inverted residual blocks and
+%     quantised to INT8. The last column is the peak activation footprint a single MCU would need, which exceeds the SRAM of a Teensy 4.1 in every case.}
+%     \label{tab:eval-models}
+%     \begin{tabular}{l c c c c}
+%         \hline
+%         \textbf{Model} & \textbf{Input} & \textbf{Expansion} & \textbf{DW kernel} &
+%         \textbf{Peak mem.} \\
+%         \hline
+%         MobileNetV2-0.35 & $224^2$ & 6 & 3 & 735~KB \\
+%         MnasNet-0.5 & $224^2$ & 3 to 6 & 3, 5 & 392~KB \\
+%         MCUNet-in4 & $160^2$ & 3 to 5 & 3, 5, 7 & 400~KB \\
+%         ProxylessNAS & $224^2$ & 3 to 6 & 3, 5, 7 & 784~KB \\
+%         \hline
+%     \end{tabular}
+% \end{table}
+
+
+
+
 
 % We evaluate our system on a testbed consisting of up to 8 Teensy 4.1 as workers with four representative CNNs for edge vision tasks. 
 \subsection{Hardware}
 As described in Section~\ref{sec:implementation-hardware-platform}, the testbed consists of up to 8 Teensy 4.1 boards as workers and a TP-Link TL-SG116 gigabit switch to connect the workers and the coordinator. 
 
 \subsection{Models}
+\begin{table}[b]
+    \caption{Evaluated models. All weights and activations are quantized to INT8 and stored in Flash and SRAM.}
+    \label{tab:eval-models}
+    \centering
+    \setlength{\tabcolsep}{8pt}
+    \resizebox{\columnwidth}{!}{%
+    \begin{tabular}{c c c c c}
+        \toprule
+        \textbf{Model} & \textbf{Input} & \textbf{Expansion} & \textbf{DW Kernel} & \textbf{Peak Mem.} \\
+        \midrule
+        MobileNetV2-0.35 & $224^2$ & $6$      & $3$     & $735$\,KB \\
+        MnasNet-0.5      & $224^2$ & $3$--$6$ & $3,5$   & $392$\,KB \\
+        MCUNet-in4       & $160^2$ & $3$--$5$ & $3,5,7$ & $400$\,KB \\
+        ProxylessNAS     & $224^2$ & $3$--$6$ & $3,5,7$ & $784$\,KB \\
+        \bottomrule
+    \end{tabular}}
+\end{table}
 
+We evaluate four representative CNNs for edge vision tasks listed in Table~\ref{tab:eval-models}. All these four models are built from inverted residual blocks, a common design for efficient CNNs, with different expansion ratios and depthwise kernel sizes. Every model is quantized to INT8 by the offline preprocessing. The last peak memory in Table~\ref{tab:eval-models} is the peak activation footprint if only a single MCU is used during inference.
 
-We evaluate four representative CNNs for edge vision tasks listed in Table~\ref{tab:eval-models}. 
+\subsection{Baseline and metrics}
+We compare our framework with a baseline that runs the same models in a naive layer-wise strategy which communicates at every layer boundary and holds each intermediate feature map in full at the coordinator. Our framework adds the two core mechanisms (\emph{A: block-wise local execution} and \emph{B: cross-block data reuse}) to the baseline as discussed in Section~\ref{sec:block-wise-local-execution} and Section~\ref{sec:cross-block-data-reuse}.
 
-
-
+We evaluate from three aspects: communication overhead, end-to-end inference latency, and peak memory footprint. Communication overhead measures the total amount of data transferred between the coordinator and workers during inference. End-to-end inference latency measures the time taken from sending the input to receiving the output. Peak memory footprint measures the maximum memory used by the coordinator and workers at runtime, as memory is a critical resource on MCUs.
 
 \section{Communication Overhead}
 \label{sec:eval-comm-overhead}
+We first break down inference to isolate the communication cost. Figure~\ref{fig:tbd} reports the communication latency of the initial convolution and the first four inverted residual blocks on four workers for each model. These early layers operate on the largeset feature maps and therefore expose the communication cost most clearly.
+
+The communication overhead dominates these layers in the baseline system. The communication latency of the first IRB reaches about 39 ms on MobileNetV2-0.35, 74 ms on MnasNet-0.5, 79 ms on MCUNet-in4, and 156 ms on ProxylessNAS. Since the output of each layer needs to be sent to the coordinator and then re-scattered to the workers, the network transfer of intermediate activations becomes a significant bottleneck. 
+
+\emph{Ours} significantly reduces the communication overhead. Our block-wise local execution keeps the expanded activation inside the worker so that it never needs to cross the network. Our cross-block data reuse only requires the communication of the thin boundary rows between adjacent workers. Therefore, the per-block communication latency falls to a few milliseconds. On the first IRB of ProxylessNAS, the latency reduction is approximately 94\%. \emph{Ours} consistently outperforms the baseline across all models and layers, demonstrating the effectiveness of our framework in reducing communication overhead.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
