@@ -1,2 +1,24 @@
 \chapter{Introduction}
 \label{chp:introduction}
+The Internet of Things (IoT) has made microcontrollers ubiquitous in our daily lives. Owing to their low cost, energy efficiency, and compact form factor, MCUs are widely employed in various applications, such as cameras, wearable devices, industrial sensors, robots, drones, and environmental monitoring systems, where they serve as the primary computing platform for sensing and control. Recently, deploying compressed deep learning models on these devices, a paradigm known as Tiny Machine Learning (TinyML), has gained significant attention [\textcolor{red}{refs}]. Executing a neural network on the local device preserves data privacy, removes cloud dependency, and guarantees low and predictable latency that sensing and control applications require. 
+
+However, the constrained resources of MCUs, including limited memory, storage, and processing power, pose significant challenges for deploying capable deep learning models on MCUs. A typical edge device offers hundreds of kilobytes to about one megabyte of Static Random-Access Memory (SRAM). While the model weights could reside in Flash memory, the intermediate feature maps (i.e., activations) generated during inference must fit in SRAM. For many Convolutional Neural Networks (CNNs), the peak activation footprint rather than the model size becomes the limiting factor for deployment on MCUs. When the activation exceeds the SRAM of the target device, the model simply cannot be deployed, no matter how small its weights have been compressed.  
+
+\section{Motivation}
+\label{sec:intro-motivation}
+
+
+
+
+
+
+
+\section{Problem Statement}
+\label{sec:intro:problem-statement}
+
+\section{Contributions}
+\label{sec:intro-contributions}
+
+
+\section{Thesis Outline}
+\label{sec:intro-thesis-outline}
