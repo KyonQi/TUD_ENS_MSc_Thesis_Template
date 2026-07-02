@@ -75,22 +75,46 @@ Another interesting observation is that although the end-to-end inference latenc
 
 \section{Peak Memory}
 \label{sec:eval-peak-memory}
+Figure~\ref{fig:tbd} shows the coordinator peak memory per IRB on four workers. In the baseline, the coordinator must materialize and buffer each intermediate feature map at runtime, so its peak is determined by the largest feature map of the model, which usually occurs in the early high-resolution blocks. \emph{Ours} keeps these intermediates on the workers and returns only boundary rows, reducing the memory footprint of the coordinator significantly. 
 
+The coordinator peak memory falls from 735 KB to 158 KB on MobileNetV2-0.35, from 412 KB to 112 KB on MCUNet, from 392 KB to 158 KB on MnasNet-0.5, and from 784 KB to 294 KB on ProxylessNAS, achieving a reduction between 60\% and 80\%. Therefore, \emph{Ours} alliviates the coordinator-side memory bottleneck that a single MCU cannot handle.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+\textcolor{red}{Need sentence describe worker memory footprint.}
 
 \section{Ablation Study}
 \label{sec:eval-ablation-study}
+
+\begin{table*}[t]
+\centering
+\caption{Ablation study of the proposed framework under the collaborative inference on 4 MCUs. (Communication is summed over the initial convolution and the first four blocks; Memory is the coordinator peak across blocks)}
+  % \textbf{A}: block-wise local execution; \textbf{B}: cross-block data reuse; \emph{Ours} enables both.
+\label{tab:eval-ablation}
+  \setlength{\tabcolsep}{1pt}
+      \resizebox{\columnwidth}{!}{
+          \begin{tabular}{c cccc cccc cccc}
+          \toprule
+          & \multicolumn{4}{c}{Communication (ms)} & \multicolumn{4}{c}{End-to-end Inference Latency (ms)} & \multicolumn{4}{c}{Memory (KB)} \\
+          \cmidrule(lr){2-5}\cmidrule(lr){6-9}\cmidrule(lr){10-13}
+          Model  
+          & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm} 
+          & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm} 
+          & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm}  \\
+          \midrule
+          MobileNetV2-0.35 & 87  & 20  & 52  & \textbf{15}  & 459  & 332  & 400  & \textbf{321}  & 735 & 343 & 318 & \textbf{158} \\
+          MCUNet           & 284 & 56  & 120 & \textbf{30}  & 938  & 601  & 690  & \textbf{552}  & 412 & 275 & 412 & \textbf{112} \\
+          MnasNet-0.5      & 253 & 64  & 113 & \textbf{38}  & 920  & 539  & 651  & \textbf{486}  & 392 & 343 & 343 & \textbf{158} \\
+          ProxylessNAS     & 432 & 107 & 159 & \textbf{52}  & 1862 & 1282 & 1368 & \textbf{1174} & 784 & 539 & 686 & \textbf{294} \\
+          \bottomrule
+          \end{tabular}
+      }
+\end{table*}
+
+Finally, we separate and evaluate the contribution of our two mechanisms (\emph{A:block-wise local execution} and \emph{B:cross-block data reuse}) through an ablation study. We conduct the study with four ablated configurations: ``\emph{Ours w/o A,B}'' disables both mechanisms and is equivalent to the baseline; ``\emph{Ours w/o A}'' disables block-wise local execution but keeps cross-block data reuse; ``\emph{Ours w/o B}'' disables cross-block data reuse but keeps block-wise local execution; and ``\emph{Ours}'' enables both mechanisms.
+
+Table~\ref{tab:eval-ablation} illustrates the results of the ablation study. The communication sums the total communication delay of the initial convolution and the first four IRBs, and the memory is the coordinator peak memory across all blocks. It is clear that enabling `A' (\emph{w/o B}) alone cuts the early-block communication by 75\% to 80\% and shortens the end-to-end inference latency by 28\% to 40\%, since it removes the transfer of the expanded activation from the critical path. It also lowers the coordinator peak memory by 12\% to 53\% by keeping the intermediate feature maps on the workers. 
+
+Enabling `B' (\emph{w/o A}) alone yields a relatively smaller gain, reducing the communication by 41\% to 63\% and the end-to-end inference latency by 13\% to 29\%. 
+This is because the cross-block data reuse only reduces the communication of the boundary rows, which is a smaller fraction of the total communication. 
+As for the coordinator peak memory, B alone helps the save the coordinator memory noticeably for some models. For example, the peak memory of MobileNetV2-0.35 drops from 735 KB to 318 KB.
+
+Both mechanisms are complementary. Adding B on top of A removes the remaining repeated transfers and brings the total communication reduction to between 82\% and 89\%. For the coordinator peak memory, only with both enabled does the coordinator memory drop to its floor between 60\% and 79\% below the baseline.
