@@ -3,7 +3,7 @@
 In this chapter, we first introduce the Inverted Residual Block (IRB) structure that underlies the efficient CNNs used in TinyML, and explain the communication bottleneck it imposes on distributed inference in Section~\ref{sec:IRB}.
 We then review widely adopted TinyML techniques in single-device deployments and explain why the block structure of efficient IRB-based CNNs limits them (Section~\ref{sec:bg-single-tinyml}).
 We then survey three families of systems that distribute CNNs inference across devices, from Section~\ref{sec:bg-split} to Section~\ref{sec:bg-mcu}.
-Each section closes with the distinction to this work, and Section~\ref{sec:bg-summary} summarises the gap the thesis addresses.
+Finally, Section~\ref{sec:bg-summary} summarises the gap the thesis addresses.
 
 \section{Inverted Residual Blocks (IRBs)}
 \label{sec:IRB}
@@ -24,33 +24,41 @@ This design is compute-efficient, but it creates a large temporary activation in
 As shown in Figure~\ref{fig:latency-breakdown}, the expanded activation exposes a significant communication bottleneck in distributed inference: communication becomes comparable to or larger than local computation after the expansion layer; in the depthwise stage, communication latency already exceeds computation latency. 
 It also stresses memory of MCUs: the MCU must receive, buffer, and re-dispatch the expanded intermediate activation at runtime, and residual connections may require it to keep the block input as well.
 
-
-
-
-
-
 \section{Single-Device TinyML Inference}
 \label{sec:bg-single-tinyml}
-TinyML brings deep learning to MCU-class devices~\cite{warden2019tinyml,david2021tflite}.
+TinyML brings deep learning to edge devices such as MCUs~\cite{warden2019tinyml,david2021tflite}.
 A rich toolbox has made single-device deployment increasingly practical.
-Integer quantisation maps weights and activations to eight-bit fixed-point values with little accuracy loss~\cite{jacob2018quantization}, and pruning and compression shrink the model itself~\cite{han2015deepcompression}.
+Many research focuses on reducing the model size and memory footprint, including quantisation, pruning, compression, and neural architecture search [\textcolor{red}{refs}].
+Integer quantization maps weights and activations to 8-bit fixed-point values with little accuracy loss~\cite{jacob2018quantization}, and pruning and compression shrink the model itself~\cite{han2015deepcompression}.
 Neural architecture search produces models tailored to tight resource budgets, including MnasNet~\cite{tan2019mnasnet}, ProxylessNAS~\cite{cai2019proxylessnas}, and MCUNet, which co-designs the architecture with its inference engine~\cite{lin2020mcunet}.
-These efficient CNNs share a common building block, the Inverted Residual Block (IRB) introduced by MobileNetV2~\cite{sandler2018mobilenetv2}, which expands the channel dimension, applies a depthwise convolution, and projects back to a compact output.
 
-The IRB is compute-efficient but memory-hostile.
-Its expanded intermediate is the largest tensor in the network, it exists only temporarily inside the block, and in early high-resolution layers it alone can exceed the SRAM of an MCU.
-Single-device systems attack this peak in several ways.
+% These efficient CNNs share a common building block, the Inverted Residual Block (IRB) introduced by MobileNetV2~\cite{sandler2018mobilenetv2}, which expands the channel dimension, applies a depthwise convolution, and projects back to a compact output.
+
+% The IRB is compute-efficient but memory-hostile.
+% Its expanded intermediate is the largest tensor in the network, it exists only temporarily inside the block, and in early high-resolution layers it alone can exceed the SRAM of an MCU.
+Besides the reduction in model size, existing TinyML systems also optimise the peak activation footprint at runtime through compression, memory-aware scheduling, and patch-based inference or model redesign [\textcolor{red}{refs}].
 Memory-aware scheduling reorders operators to shrink co-resident tensors, and patch-based inference splits the input spatially and processes one patch at a time~\cite{lin2021mcunetv2}.
-Patch-based execution, however, introduces overlapping receptive fields across consecutive layers, so patches must be recomputed where they overlap and latency grows.
-Model redesign and architecture search can avoid the peak altogether, but they require retraining and weaken the direct reuse of standard pretrained models.
+However, patch-based execution, introduces overlapping receptive fields across consecutive layers, leading to a repeated computation and higher latency.
+Model redesign can avoid the peak altogether, but they require retraining and weaken the direct reuse of standard pretrained models.
 
-These techniques all operate within the budget of one device.
-When the peak activation footprint still exceeds that budget, they force a choice between accuracy, latency, and hardware cost.
-This thesis takes the orthogonal route of pooling the memory of several networked MCUs, while preserving the original model and its accuracy.
+% These techniques all operate within the budget of one device.
+% When the peak activation footprint still exceeds that budget, they force a choice between accuracy, latency, and hardware cost.
+% This thesis takes the orthogonal route of pooling the memory of several networked MCUs, while preserving the original model and its accuracy.
 
 \section{Split Inference between Device and Cloud}
 \label{sec:bg-split}
-A first way to escape the single-device budget is to split the network between the device and a more capable tier.
+
+
+\begin{figure}[t]
+    \center
+    \includegraphics[width=\linewidth]{figs/Thesis1.pdf}
+    \caption{Latency breakdown of the first IRB of MobileNetV2 under layer-wise execution on four MCUs. After channel expansion, communication becomes comparable to or larger than local computation, showing that expanded activations dominate distributed execution.}
+    % \vspace{-4mm}
+    \label{fig:latency-breakdown}
+\end{figure}
+
+
+A first way to avoid the single-device budget is to split the model between the edge device and a more powerful cloud server.
 Neurosurgeon pioneered this line by selecting a layer at which to cut a network between a mobile device and the cloud, trading local computation against transmission cost~\cite{kang2017neurosurgeon}.
 Recent TinyML-oriented split computing studies carry the idea to low-power IoT devices, evaluating how quantised models can be divided across device and edge, with particular attention to split-point selection, wireless protocol choices, and end-to-end latency~\cite{bove2024smartsplit,bove2024performance}, and to reducing the latency of split execution in TinyML IoT systems~\cite{jenhani2025optimizing}.
 
