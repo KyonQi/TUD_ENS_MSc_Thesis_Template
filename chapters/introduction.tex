@@ -9,18 +9,14 @@ However, the constrained resources of MCUs, including limited memory, storage, a
 
 \begin{figure}[t]
     \center
-    \includegraphics[width=0.95\textwidth]{figs/per_layer_activation.pdf}
+    \includegraphics[width=\linewidth]{figs/per_layer_activation.pdf}
     \caption{Layer-wise activation footprint of MobileNetV2. The expand--depthwise--project structure of inverted residual blocks creates highly unbalanced intermediate activations. In a layer-wise distributed runtime, these expanded activations must be transferred through the network and buffered by coordinator, causing communication and SRAM bottlenecks.}
     % \vspace{-4mm}
-    \label{fig:system-architecture}
+    \label{fig:per-layer-activation}
 \end{figure}
 
-
-
-
-
 \textcolor{red}{need to rephrase.} 
-The activation constraint is a critical bottleneck for deploying efficient CNN models built from Inverted Residual Blocks (IRBs) on MCUs, such as MobileNetV2, MCUNet, MnasNet, and ProxylessNAS [\textcolor{red}{ref}].  An IRB usually first expands the channel dimension by an expansion ratio, then applies a depthwise convolution, and finally projects the feature maps back to a compact output channel dimension. It is compute-efficient, but it creates a large \emph{temporary} activation that exists only inside the block. As shown in Figure~\ref{fig:tbd}, these temporary activations between the expansion and projection layers can be significantly larger than the limited SRAM budget of MCUs, creating highly unbalanced activation footprints across layers. Typically, the peak activation occurs temporarily only inside the IRB, after channel expansion and before channel projection. 
+The activation constraint is a critical bottleneck for deploying efficient CNN models built from Inverted Residual Blocks (IRBs) on MCUs, such as MobileNetV2, MCUNet, MnasNet, and ProxylessNAS [\textcolor{red}{ref}].  An IRB usually first expands the channel dimension by an expansion ratio, then applies a depthwise convolution, and finally projects the feature maps back to a compact output channel dimension. It is compute-efficient, but it creates a large \emph{temporary} activation that exists only inside the block. As shown in Figure~\ref{fig:per-layer-activation}, these temporary activations between the expansion and projection layers can be significantly larger than the limited SRAM budget of MCUs, creating highly unbalanced activation footprints across layers. Typically, the peak activation occurs temporarily only inside the IRB, after channel expansion and before channel projection. 
 
 Existing TinyML researches, including quantization, pruning, and neural architecture search, and memory-aware runtime, have made significant progress in single MCU deployment [\textcolor{red}{refs}]. However, when the acitvation footprint exceeds the SRAM capacity of single MCU, developers still need to redesign the model architecture, reduce the input resolution, use repeated patch-based inference, or move the task to a more powerful device.   
 
@@ -46,7 +42,7 @@ Building such a system raises two challenges.
 A single-device model does not contain the information for distributed execution. A networked MCU runtime must know, for each worker, which spatial partition it owns, which weight slices it needs, which quantisation scales and zero-points apply, which layers should be grouped into one execution unit, which activations must be cached for residual connections, and which boundary rows its neighbours require. These decisions further depend on the number of workers and on the SRAM budget of each device. Without an automatic preparation pipeline, distributed TinyML deployment degenerates into model-specific and hardware-specific manual work that is hard to reproduce, to port to a new CNN, or to scale to a different cluster size.
 
 \paragraph{Challenge 2. Making the distributed execution communication- and memory-efficient.}
-Even with a valid distributed representation, a naive layer-wise strategy can be highly inefficient. As illustrated in Figure~\ref{fig:tbd}, IRB-based CNNs create large tempory activations during inference, and every expanded activation must be tranferred across the network twice and resides in full at the coordinator. Hence, the key design problem is not simply how to split computation across workers, but how to choose execution boundaries that avoid exposing large temporary activations to the network. On networked MCUs, a small and bounded amount of local recomputation can be far preferable to repeatedly transmitting expanded feature maps through the coordinator, and a practical framework must reason about this trade-off explicitly.
+Even with a valid distributed representation, a naive layer-wise strategy can be highly inefficient. As illustrated in Figure~\ref{fig:per-layer-activation}, IRB-based CNNs create large tempory activations during inference, and every expanded activation must be tranferred across the network twice and resides in full at the coordinator. Hence, the key design problem is not simply how to split computation across workers, but how to choose execution boundaries that avoid exposing large temporary activations to the network. On networked MCUs, a small and bounded amount of local recomputation can be far preferable to repeatedly transmitting expanded feature maps through the coordinator, and a practical framework must reason about this trade-off explicitly.
 
 \section{Contributions}
 \label{sec:intro-contributions}
