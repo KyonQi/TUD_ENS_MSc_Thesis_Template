@@ -1,9 +1,33 @@
 \chapter{Background and Related Work}
 \label{chp:related-work}
-This chapter positions the thesis in the literature.
-We first review single-device TinyML techniques and explain why the block structure of efficient CNNs limits them (Section~\ref{sec:rw-tinyml}).
-We then survey the three families of systems that distribute neural network inference across machines, namely split inference between a device and the cloud (Section~\ref{sec:rw-split}), distributed inference on edge clusters (Section~\ref{sec:rw-cluster}), and collaborative inference on networked MCUs (Section~\ref{sec:rw-mcu}).
-Each section closes with the distinction to this work, and Section~\ref{sec:rw-summary} summarises the gap the thesis addresses.
+In this chapter, we first introduce the Inverted Residual Block (IRB) structure that underlies the efficient CNNs used in TinyML, and explain the communication bottleneck it imposes on distributed inference in Section~\ref{sec:IRB}.
+We then review widely adopted TinyML techniques in single-device deployments and explain why the block structure of efficient IRB-based CNNs limits them (Section~\ref{sec:bg-single-tinyml}).
+We then survey three families of systems that distribute CNNs inference across devices, from Section~\ref{sec:bg-split} to Section~\ref{sec:bg-mcu}.
+Each section closes with the distinction to this work, and Section~\ref{sec:bg-summary} summarises the gap the thesis addresses.
+
+\section{Inverted Residual Blocks (IRBs)}
+\label{sec:IRB}
+
+\begin{figure}[t]
+    \center
+    \includegraphics[width=\linewidth]{figs/blk1_compute_vs_comm_mbv2_035.pdf}
+    \caption{Latency breakdown of the first IRB of MobileNetV2 under layer-wise execution on four MCUs. After channel expansion, communication becomes comparable to or larger than local computation, showing that expanded activations dominate distributed execution.}
+    % \vspace{-4mm}
+    \label{fig:latency-breakdown}
+\end{figure}
+
+
+Many efficient CNNs used in TinyML rely on IRBs~\cite{sandler2018mobilenetv2,lin2020mcunet,tan2019mnasnet,cai2019proxylessnas}. 
+An IRB follows an expand--depthwise--project structure: it first expands the channel dimension, processes the expanded representation with depthwise convolution, and then projects the feature map back to a compact output. 
+This design is compute-efficient, but it creates a large temporary activation inside the block. 
+
+As shown in Figure~\ref{fig:latency-breakdown}, the expanded activation exposes a significant communication bottleneck in distributed inference: communication becomes comparable to or larger than local computation after the expansion layer; in the depthwise stage, communication latency already exceeds computation latency. 
+It also stresses memory of MCUs: the MCU must receive, buffer, and re-dispatch the expanded intermediate activation at runtime, and residual connections may require it to keep the block input as well.
+
+
+
+
+
 
 \section{Single-Device TinyML Inference}
 \label{sec:bg-single-tinyml}
@@ -50,7 +74,7 @@ On MCU-class hardware neither assumption survives.
 This thesis therefore treats the communication boundary itself as the design object, aligning it with the IRB structure, bounding coordinator memory by construction, and deriving the correctness conditions that residual connections impose on cross-block data reuse.
 
 \section{Collaborative Inference on Networked MCUs}
-\label{sec:rw-mcu}
+\label{sec:bg-mcu}
 
 Closest to this thesis is collaborative inference on clusters of MCUs themselves.
 Recent work has shown that a CNN infeasible on a single MCU can be executed across multiple networked MCUs by partitioning its parameters and activations at fine granularity~\cite{lu2026splitcnn}.
@@ -62,7 +86,7 @@ What remains missing is a framework that generates and executes a distribution s
 Providing exactly that framework is the subject of this thesis.
 
 \section{Summary}
-\label{sec:rw-summary}
+\label{sec:bg-summary}
 
 Table~\ref{tab:rw-positioning} summarises the landscape.
 Single-device TinyML techniques are bounded by the SRAM of one device.
