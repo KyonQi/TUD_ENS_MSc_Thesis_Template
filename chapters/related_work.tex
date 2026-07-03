@@ -1,4 +1,94 @@
-\chapter{Related Work}
+\chapter{Background and Related Work}
 \label{chp:related-work}
+This chapter positions the thesis in the literature.
+We first review single-device TinyML techniques and explain why the block structure of efficient CNNs limits them (Section~\ref{sec:rw-tinyml}).
+We then survey the three families of systems that distribute neural network inference across machines, namely split inference between a device and the cloud (Section~\ref{sec:rw-split}), distributed inference on edge clusters (Section~\ref{sec:rw-cluster}), and collaborative inference on networked MCUs (Section~\ref{sec:rw-mcu}).
+Each section closes with the distinction to this work, and Section~\ref{sec:rw-summary} summarises the gap the thesis addresses.
 
-Related work
+\section{Single-Device TinyML Inference}
+\label{sec:bg-single-tinyml}
+TinyML brings deep learning to MCU-class devices~\cite{warden2019tinyml,david2021tflite}.
+A rich toolbox has made single-device deployment increasingly practical.
+Integer quantisation maps weights and activations to eight-bit fixed-point values with little accuracy loss~\cite{jacob2018quantization}, and pruning and compression shrink the model itself~\cite{han2015deepcompression}.
+Neural architecture search produces models tailored to tight resource budgets, including MnasNet~\cite{tan2019mnasnet}, ProxylessNAS~\cite{cai2019proxylessnas}, and MCUNet, which co-designs the architecture with its inference engine~\cite{lin2020mcunet}.
+These efficient CNNs share a common building block, the Inverted Residual Block (IRB) introduced by MobileNetV2~\cite{sandler2018mobilenetv2}, which expands the channel dimension, applies a depthwise convolution, and projects back to a compact output.
+
+The IRB is compute-efficient but memory-hostile.
+Its expanded intermediate is the largest tensor in the network, it exists only temporarily inside the block, and in early high-resolution layers it alone can exceed the SRAM of an MCU.
+Single-device systems attack this peak in several ways.
+Memory-aware scheduling reorders operators to shrink co-resident tensors, and patch-based inference splits the input spatially and processes one patch at a time~\cite{lin2021mcunetv2}.
+Patch-based execution, however, introduces overlapping receptive fields across consecutive layers, so patches must be recomputed where they overlap and latency grows.
+Model redesign and architecture search can avoid the peak altogether, but they require retraining and weaken the direct reuse of standard pretrained models.
+
+These techniques all operate within the budget of one device.
+When the peak activation footprint still exceeds that budget, they force a choice between accuracy, latency, and hardware cost.
+This thesis takes the orthogonal route of pooling the memory of several networked MCUs, while preserving the original model and its accuracy.
+
+\section{Split Inference between Device and Cloud}
+\label{sec:bg-split}
+A first way to escape the single-device budget is to split the network between the device and a more capable tier.
+Neurosurgeon pioneered this line by selecting a layer at which to cut a network between a mobile device and the cloud, trading local computation against transmission cost~\cite{kang2017neurosurgeon}.
+Recent TinyML-oriented split computing studies carry the idea to low-power IoT devices, evaluating how quantised models can be divided across device and edge, with particular attention to split-point selection, wireless protocol choices, and end-to-end latency~\cite{bove2024smartsplit,bove2024performance}, and to reducing the latency of split execution in TinyML IoT systems~\cite{jenhani2025optimizing}.
+
+These systems optimise the position of a single cut between two tiers.
+The activation at the cut still crosses the network in full, and the heavier tier carries the remainder of the model.
+In contrast, this thesis distributes every layer across a group of peer MCUs with no capable tier at all, so the relevant question is not where to cut once, but how to keep the many per-layer exchanges from being dominated by tensors that were never meant to leave a device.
+
+\section{Distributed TinyML Inference}
+\label{sec:bg-distributed}
+A second family distributes inference across a cluster of cooperating edge devices.
+MoDNN partitions a network across multiple mobile devices with a MapReduce-style execution~\cite{mao2017modnn}, and DeepThings partitions the early convolutional layers into independently computable tiles that are fused across layers and distributed over an edge cluster~\cite{zhao2018deepthings}.
+CoEdge adaptively partitions the workload over heterogeneous edge devices at run time~\cite{zeng2020coedge}, and DISNET combines vertical and horizontal micro-splits in dynamic IoT environments~\cite{samikwa2024disnet}.
+NNFacet splits one network across concurrent smart sensors so that each device hosts a slice of the model~\cite{chen2024nnfacet}, and Pico pipelines CNN inference across diverse mobile devices~\cite{yang2023pico}.
+A parallel line automates the partitioning decision itself.
+PArtNNer adapts edge-cloud partitioning to the platform without prior hardware knowledge~\cite{ghosh2024partnner}, Kre{\ss} et al.\ automate inference partitioning for distributed embedded systems~\cite{kress2024automated}, and HiDP schedules hierarchical partitions on heterogeneous edge platforms~\cite{taufique2025hidp}.
+
+Collectively these systems establish that partitioned execution relieves per-device memory and pools computation, and DeepThings in particular shows the value of fusing layers to avoid intermediate exchanges.
+However, they assume devices of single-board computer (SBC) class, with megabytes to gigabytes of memory and an operating system, and most of them still organise communication around layer boundaries or fine-grained sub-layer tasks.
+On such hardware the coordinating device can afford to buffer intermediate activations, so coordinator memory is not treated as a first-class constraint, and the interaction between residual connections and data reuse across block boundaries is not analysed.
+On MCU-class hardware neither assumption survives.
+This thesis therefore treats the communication boundary itself as the design object, aligning it with the IRB structure, bounding coordinator memory by construction, and deriving the correctness conditions that residual connections impose on cross-block data reuse.
+
+\section{Collaborative Inference on Networked MCUs}
+\label{sec:rw-mcu}
+
+Closest to this thesis is collaborative inference on clusters of MCUs themselves.
+Recent work has shown that a CNN infeasible on a single MCU can be executed across multiple networked MCUs by partitioning its parameters and activations at fine granularity~\cite{lu2026splitcnn}.
+This demonstrates the feasibility of MCU-level model partitioning and provides mechanisms for partitioning, offloading, and workload allocation.
+
+Feasibility, however, is not efficiency.
+Fine-grained partitions exchange data at sub-layer boundaries, which multiplies the number of transfers and, for IRB-based CNNs, exposes the temporarily expanded activation to the network in the same way layer-wise schedules do.
+What remains missing is a framework that generates and executes a distribution strategy whose boundaries respect the block structure of the model, so that expanded activations stay local and only compact block inputs, projected outputs, and necessary boundary rows are exchanged.
+Providing exactly that framework is the subject of this thesis.
+
+\section{Summary}
+\label{sec:rw-summary}
+
+Table~\ref{tab:rw-positioning} summarises the landscape.
+Single-device TinyML techniques are bounded by the SRAM of one device.
+Cloud-edge split inference optimises a single cut and relies on a capable tier.
+Edge-cluster systems distribute the model but assume single-board-computer hardware and communicate at layer or sub-layer boundaries, and existing MCU-level split inference demonstrates feasibility at fine granularity without addressing the block-induced communication boundary.
+Across all of them, two elements are missing.
+First, no system jointly treats network traffic and coordinator memory as the coupled bottleneck they form on MCU-class clusters.
+Second, no preparation pipeline exposes the partition, boundary, residual, and memory information that a standard model file lacks, which is Challenge 1 of Chapter~\ref{chp:introduction}.
+This thesis fills both gaps with the offline preprocessing pipeline and the two communication-aware mechanisms presented in Chapter~\ref{chp:system_design}.
+
+\begin{table}[t]
+\centering
+\caption{Positioning of this thesis against the main families of related work.}
+\label{tab:rw-positioning}
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{l c c c c}
+\hline
+\textbf{Approach} & \textbf{Hardware} & \textbf{Comm.\ unit}
+ & \textbf{Coord.\ memory} & \textbf{Auto.\ prep.} \\
+\hline
+Cloud-edge split & device $+$ cloud & single cut & not addressed & partial \\
+Edge cluster & SBCs & layer or tile & not addressed & partial \\
+MCU-level split & MCUs & sub-layer & not addressed & no \\
+\textbf{This thesis} & \textbf{MCUs} & \textbf{IRB block} & \textbf{bounded} &
+\textbf{yes} \\
+\hline
+\end{tabular}
+\end{table}
