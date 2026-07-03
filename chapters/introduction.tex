@@ -9,7 +9,7 @@ However, the constrained resources of MCUs, including limited memory, storage, a
 
 \begin{figure}[t]
     \center
-    \includegraphics[width=\textwidth]{figs/per_layer_activation.pdf}
+    \includegraphics[width=0.95\textwidth]{figs/per_layer_activation.pdf}
     \caption{Layer-wise activation footprint of MobileNetV2. The expand--depthwise--project structure of inverted residual blocks creates highly unbalanced intermediate activations. In a layer-wise distributed runtime, these expanded activations must be transferred through the network and buffered by coordinator, causing communication and SRAM bottlenecks.}
     % \vspace{-4mm}
     \label{fig:system-architecture}
