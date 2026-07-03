@@ -1,5 +1,7 @@
 build/*
-*.pdf
+# *.pdf
+thesis.pdf
+template-pics/*.pdf
 
 /plans/
 
