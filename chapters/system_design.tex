@@ -53,16 +53,86 @@ where $(s,z)$ denotes the scale and zero-point of the input, weight, and output 
 \textcolor{red}{For every layer of CNNs, the scales, zero-points, and the precomputed multipliers, together with the structural metadata (e.g., layer type, input/output channels, kernel size, residual links between layers, etc.) are extracted and serialized into a JSON file. It is consumed by the coordinator and as C++ headers into each worker's Flash.}
 
 \subsection{Planner}
-The planner compiles the quantized model graph into a communication-aware execution plan. For each block of layers, it decides whether the block can be partially executed locally by the workers as a single unit, or have to fall back to a layer-wise strategy (Section~\ref{sec:block-wise-local-execution}), and whether the block's output feature map could be safely reused by the next block (Section~\ref{sec:cross-block-data-reuse}). These decisions are determined offline and will be strictly followed at runtime. Algorithm~\ref{alg:xx} summarizes the workflow both in the offline preprocessing stage and the online inference stage.
-\textcolor{red}{add more contents to the planner}
+The planner compiles the quantized model graph into a communication-aware execution plan.
+For each block of layers, it decides whether the block can be executed locally by the workers as a single unit or has to fall back to a layer-wise strategy (Section~\ref{sec:block-wise-local-execution}), and whether the block's output feature map can be safely reused by the next block (Section~\ref{sec:cross-block-data-reuse}).
+These decisions are made offline and are strictly followed at runtime.
+
+Lines~\ref{ln:offline-start}--\ref{ln:offline-end} of Algorithm~\ref{alg:plan-execute} summarise the offline planning stage.
+The planner walks the blocks of $\mathcal{G}$ in order and creates one plan entry $p$ per block.
+For each block, it first determines the \emph{execution mode} (line~\ref{ln:block-mode}), which decides whether the block can be executed by the workers as a single locally-computed unit.
+It then evaluates whether \emph{cross-block reuse} can be enabled (line~\ref{ln:reuse-enable}), which the system can prevent repeated activations from being transferred across the network.
+The completed entry is appended to $\mathcal{P}$, and the resulting plan is what the runtime consumes.
+
 % maybe add more contents to the planner
+
+\begin{algorithm}[t]
+\small
+\caption{The communication-aware execution planning and inference in our proposed framework}
+\label{alg:plan-execute}
+\KwIn{Model graph $\mathcal{G}$; workers $\mathcal{W}$; input $X$.}
+\KwOut{Final prediction $Y$.}
+
+\textbf{Offline planning:}\\
+$\mathcal{P}\gets\emptyset$ \label{ln:offline-start}\\
+\For{each block $B$ in $\mathcal{G}$}{
+    $p\gets\textsc{CreatePlanEntry}(B)$\\
+    \eIf{$B$ can be executed locally by workers}{
+        $p.\textit{mode}\gets\textsc{BlockWiseLocalExecution}$\label{ln:block-mode}\\
+    }{
+        $p.\textit{mode}\gets\textsc{LayerWiseFallback}$\\
+    }
+
+    \eIf{the output of $B$ can be safely reused by the next block}{
+        $p.\textit{reuse}\gets\textsc{EnableCrossBlockReuse}$\label{ln:reuse-enable}\\
+    }{
+        $p.\textit{reuse}\gets\textsc{DisableCrossBlockReuse}$\\
+    }
+
+    $\mathcal{P}\gets\mathcal{P}\cup\{p\}$ \label{ln:offline-end}\\
+}
+
+\textbf{Online inference:}\\
+$T\gets\textsc{Quantize}(X)$ \label{ln:online-start}\\
+\For{each plan entry $p$ in $\mathcal{P}$}{
+    \For{each worker $w$ in $\mathcal{W}$}{
+        $m_w\gets\textsc{BuildTask}(p,T,w)$\label{ln:build-task}\\
+        $\textsc{SendTask}(w,m_w)$\\
+    }
+
+    \For{each worker $w$ in $\mathcal{W}$}{
+        $r_w\gets\textsc{ReceiveResult}(w)$\label{ln:receive-result}\\
+    }
+
+    $T\gets\textsc{CombineResults}(\{r_w\}_{w\in\mathcal{W}})$\label{ln:combine-results}\\
+}
+
+$Y\gets\textsc{DecodePrediction}(T)$ \label{ln:online-end}\\
+\Return{$Y$}
+\end{algorithm}
 
 \section{Online Inference}
 \label{sec:online-inference}
-The coordinator-worker architecture is designed to execute the distributed inference tasks efficiently. As demonstrated in Figure~\ref{fig:tbd}, a coordinator is responsbile for the task scheduling and data aggregation. Based on the execution plan, the coordinator partitions the input activations, wraps and assigns the computation tasks to workers, and gather results from workers to produce the output activations. Each worker is in charge of executing the assigned tasks, which includes loading model weights in Flash, selecting the suitable computation kernel, and performing the computation on the input activations.
+The coordinator--worker architecture is designed to execute the distributed inference tasks efficiently.
+As illustrated in Figure~\ref{fig:system-architecture}, the coordinator is responsible for task scheduling and data aggregation.
+Following the execution plan produced offline, it partitions the input activations, wraps and assigns the computation tasks to the workers, and gathers their results to form the output activations.
+Each worker executes its assigned task by loading the model weights from Flash, selecting the suitable computation kernel, and performing the computation on the input activations.
+The online part of Algorithm~\ref{alg:plan-execute} (lines~\ref{ln:online-start}--\ref{ln:online-end}) details this runtime workflow: for each plan entry, the coordinator builds a per-worker task (line~\ref{ln:build-task}), dispatches it, collects the partial results (line~\ref{ln:receive-result}), and combines them before advancing to the next entry (line~\ref{ln:combine-results}).
+
+
 
 \subsection{Coordinator Design}
 \label{sec:coordinator-design}
+
+\begin{figure}[t]
+    \center
+    \includegraphics[width=\linewidth]{figs/coordinator-components.pdf}
+    \caption{coordinator-components.}
+    % \vspace{-4mm}
+    \label{fig:coordinator-components}
+\end{figure}
+
+
+
 \textcolor{red}{Add a figure to illustrate the components in coordinator}
 The coordinator is an event-driven server, built on an asynchronous I/O event loop to handle multiple concurrent connections from workers. As shown in Figure~\ref{fig:tbd}, it is organized into a set of decoupled components, including:
 \begin{itemize}
@@ -73,7 +143,7 @@ The coordinator is an event-driven server, built on an asynchronous I/O event lo
 
 The design principle of the coordinator is to abstract the independent components and provide a unified interface for the inference engine to drive the execution. The inference engine is agnostic to \emph{how} tasks reach workers, which is the distributor's responsibility, and to \emph{how} layers are grouped into blocks, which is the strategy mapper's responsibility. This decoupling design allows for flexibility in the implementation of the coordinator. A single engine could easily support different models on different number of workers, and different strategies for block grouping and task distribution. \textcolor{red}{Maybe need to rephrase it.}
 
-\paragraph{Connection Manager.} 
+\paragraph{Worker Manager.} 
 The worker manager abstracts the network transport from the rest of the system. When a worker tries to connect to the coordinator, it will first go through a short registration handshake defined in the application layer. The worker needs to announce itself and provide its clock frequency, so the coordinator can reply with an assigned unique worker ID. \textcolor{red}{Each connection is tracked by a state machine that handles the connection state and the message framing.} Idle workers are kept in a queue from which the engine draws when dispatching the next round of tasks. \textcolor{red}{Nagle's algorithm is
 disabled on each connection so that small task descriptors are sent without delay.}
 
@@ -164,7 +234,7 @@ Take the first IRB of MobileNetV2 as an instance, a layer-wise coordinator must 
 \textcolor{red}{Maybe further discussed about the saving in mathmatical.}
 
 
-\section{Overlap-ratio Cost Model}
+\subsection{Overlap-ratio Cost Model}
 \label{sec:overlap-ratio-cost-model}
 % We have implemented a hybrid scheduling mechanism that combines the benefits of both centralized and decentralized approaches. This allows for more efficient resource allocation and load balancing across the system.
 Block-wise local execution trades communication for computation, as each worker must compute the overlapping input rows required by its neighbors. Figure~\ref{fig:tbd} illustrates the overlapping input rows for two adjacent workers $i$ and $i+1$. The number of overlapping rows between two adjacent workers is determined by the kernel size $k$ and stride $s$ of the convolution, and is given by:
@@ -231,7 +301,7 @@ which is produced by the neighbouring workers $i-1$ and $i+1$.
 
 Therefore, on the downlink the coordinator forwards only the boundary rows each worker lacks instead of a full input patch. On the uplink a worker returns only the boundary rows its neighbours will need instead of its full output. The interior rows are never transmitted over the network, which significantly reduces the communication overhead between consecutive blocks. The coordinator now holds only boundaries and acts as a lightweight scheduler rather than a full data aggregator, lowering its peak memory footprint. 
 
-\section{Conditions to Enable Cross-block Data Reuse}
+\subsection{Conditions to Enable Cross-block Data Reuse}
 \label{sec:cross-conditions}
 % Some conditions for cross-block data reuse include:
 % \begin{itemize}
