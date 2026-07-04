@@ -118,3 +118,5 @@ This is because the cross-block data reuse only reduces the communication of the
 As for the coordinator peak memory, B alone helps the save the coordinator memory noticeably for some models. For example, the peak memory of MobileNetV2-0.35 drops from 735 KB to 318 KB.
 
 Both mechanisms are complementary. Adding B on top of A removes the remaining repeated transfers and brings the total communication reduction to between 82\% and 89\%. For the coordinator peak memory, only with both enabled does the coordinator memory drop to its floor between 60\% and 79\% below the baseline.
+
+
