@@ -225,6 +225,7 @@ For the fully connected layer, the distributor simply splits the the layer by ou
 \end{align}
 
 \subsection{Worker Design}
+\label{sec:worker-design}
 \begin{figure}[t]
     \center
     \includegraphics[width=\linewidth]{figs/worker_state_machine.pdf}
@@ -326,7 +327,7 @@ Take the first IRB of MobileNetV2 as an instance, a layer-wise coordinator must 
 \begin{figure}[t]
     \center
     \includegraphics[width=\linewidth]{figs/kernel-overlap.pdf}
-    \caption{Overlap.}
+    \caption{Overlapping input rows for two adjacent workers. Disjoint outputs require input slices that overlap by $K-s$ rows whenever $K>1$.}
     % \vspace{-4mm}
     \label{fig:kernel-overlap}
 \end{figure}
@@ -383,11 +384,22 @@ The threshold can be determined empirically based on the specific model architec
 \section{Cross-block Data Reuse}
 \label{sec:cross-block-data-reuse}
 % To further optimize performance, we have implemented a cross-block data reuse mechanism. This allows data generated in one block to be efficiently utilized in subsequent blocks, reducing redundant computations and improving overall system efficiency.
-Block-wise local execution still leaves redundant communication between consecutive blocks. After a worker finishes block $b$, most of its output is exactly the data it needs to begin block $b+1$. A naive strategy returns this data back to the coordinator and immediately sends it back to the same worker again, wasting the limited bandwidth and inflating coordinator memory. To address this, we propose to reuse cross-block data. As illustrated in Figure~\ref{fig:tbd}, it keeps reusable data on the worker and exchanges only the small boundary region the next block requires.
 
-\textcolor{red}{Rephrase needed.} Rather than discarding its output once finished with block $b$, a worker caches the rows it produced for block $b$ in its local buffer. The interior rows of the output need not cross the network, since they are exactly the rows required by the next block $b+1$. The only data that must still move between two consecutive blocks is the thin boundary region that a worker's neighbor requires but does not produce itself.
+\begin{figure}[t]
+    \center
+    \includegraphics[width=\linewidth]{figs/fig_Overlapped_Compute.pdf}
+    \caption{Cross-block data reuse.}
+    % \vspace{-4mm}
+    \label{fig:cross-block-data-reuse}
+\end{figure}
 
-Concretely, consider worker $i$ needs input rows $[a_i, b_i)$ for block $b+1$, while it already caches rows $[s_i, e_i)$ from block $b$. The cached overlap is the intersection $[\max(a_i, s_i),\min(b_i, e_i))$, so the only rows worker $i$ lacks are the top and bottom boundary rows,
+
+
+Block-wise local execution still leaves redundant communication between consecutive blocks. After a worker finishes block $b$, most of its output is exactly the data it needs to begin block $b+1$. A naive strategy returns this data back to the coordinator and immediately sends it back to the same worker again, wasting the limited bandwidth and inflating coordinator memory. To address this, we propose to reuse cross-block data. As illustrated in Figure~\ref{fig:cross-block-data-reuse}, it keeps reusable data on the worker and exchanges only the small boundary region the next block requires.
+
+% \textcolor{red}{Rephrase needed.} Rather than discarding its output once finished with block $b$, a worker caches the rows it produced for block $b$ in its local buffer. The interior rows of the output need not cross the network, since they are exactly the rows required by the next block $b+1$. The only data that must still move between two consecutive blocks is the thin boundary region that a worker's neighbor requires but does not produce itself.
+
+Concretely, consider worker $i$ needs input rows $[a_i, b_i)$ for block $b+1$, while it has already cached rows $[s_i, e_i)$ from block $b$. The cached rows cover the intersection $[\max(a_i, s_i),\min(b_i, e_i))$, so the only rows worker $i$ lacks are the top and bottom boundary rows: 
 \begin{equation}
     \beta^i_{\mathrm{top}} = \max(0, s_i - a_i),
     \qquad
@@ -396,31 +408,14 @@ Concretely, consider worker $i$ needs input rows $[a_i, b_i)$ for block $b+1$, w
 \end{equation}
 which is produced by the neighbouring workers $i-1$ and $i+1$. 
 
-Therefore, on the downlink the coordinator forwards only the boundary rows each worker lacks instead of a full input patch. On the uplink a worker returns only the boundary rows its neighbours will need instead of its full output. The interior rows are never transmitted over the network, which significantly reduces the communication overhead between consecutive blocks. The coordinator now holds only boundaries and acts as a lightweight scheduler rather than a full data aggregator, lowering its peak memory footprint. 
+Therefore, our cross-block data reuse significantly reduces communication overhead in both directions during inference.
+On the downlink, the coordinator forwards only the boundary rows each worker lacks instead of a full input patch. 
+On the uplink, a worker returns only the boundary rows its neighbours will need instead of its full output. 
+The interior rows are never transmitted over the network, which significantly reduces the communication overhead between consecutive blocks. 
+The coordinator now holds only boundaries and acts as a lightweight scheduler rather than a full data aggregator, lowering its peak memory footprint. 
 
 \paragraph{Conditions to Enable Cross-block Data Reuse.}
 \label{sec:cross-conditions}
-% Some conditions for cross-block data reuse include:
-% \begin{itemize}
-%     \item Data must be compatible across blocks.
-%     \item The data must be stored in a format that allows for easy retrieval and reuse.
-%     \item The system must ensure that the reused data is up-to-date and valid for the current block's processing requirements.
-% \end{itemize}
-
-% \begin{table}[t]
-%     \centering
-%     \begin{tabular}{| >{\centering\arraybackslash}m{4.3cm} | >{\centering\arraybackslash}m{7.0cm} |}
-%         \hline
-%         \textbf{Reuse direction} & \textbf{Enabling condition} \\
-%         \hline \hline
-%         Coordinator $\rightarrow$ worker & Previous block has no residual connection. \\
-%         \hline
-%         Worker $\rightarrow$ coordinator & Current block has no residual connection, the next block neither caches nor consumes a residual, and the next block is spatial rather than fully connected. \\
-%         \hline
-%     \end{tabular}
-%     \caption{Conditions under which cross-block data reuse preserves correctness, decided offline and encoded in the per-worker manifests.}
-%     \label{tab:reuse-conditions}
-% \end{table}
 
 \begin{table}
     \centering
@@ -441,6 +436,22 @@ Therefore, on the downlink the coordinator forwards only the boundary rows each 
 \caption{Conditions to enable cross-block data reuse.}
 \label{tab:reuse-conditions}
 \end{table}
+
+% \begin{table}[t]
+% \centering
+% \caption{Conditions to enable cross-block data reuse.}
+% \label{tab:reuse-conditions}
+% \footnotesize
+% \setlength{\tabcolsep}{10pt}
+% \begin{tabular}{c c}
+% \hline
+% \textbf{Reuse Direction} & \textbf{Enabling Conditions} \\
+% \hline
+% Coordinator $\rightarrow$ worker & Previous block has no residual connection. \\
+% Worker $\rightarrow$ coordinator & (i) Current block has no residual connection; (ii) Next block neither caches nor consumes a residual; (iii) Next block is spatial rather than fully connected.  \\
+% \hline
+% \end{tabular}
+% \end{table}
 
 
 Cross-block data reuse is employed only when it does not compromise the accuracy of the inference stage. The enabling conditions are evaluated in the offline preprocessing stage and encoded in the task metadata at runtime, so the workers simply follow the execution plan. There are two situations that make a worker's local data invalid to reuse.

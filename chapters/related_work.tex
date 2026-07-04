@@ -63,28 +63,28 @@ Model redesign can avoid the peak altogether, but they require retraining and we
         \centering
         \includegraphics[width=\linewidth]{figs/bg-cloud.pdf}
         % \vspace{-2mm}
-        \caption{Cloud--edge split.}
+        \caption{Cloud--edge split}
         \label{fig:related-a}
     \end{subfigure}\hfill%
     \begin{subfigure}{0.33\linewidth}
         \centering
         \includegraphics[width=\linewidth]{figs/bg-modnn.pdf}
         % \vspace{-2mm}
-        \caption{Layer-wise split.}
+        \caption{Layer-wise split}
         \label{fig:related-b}
     \end{subfigure}\hfill%
     \begin{subfigure}{0.33\linewidth}
         \centering
         \includegraphics[width=\linewidth]{figs/bg-fined.pdf}
         % \vspace{-2mm}
-        \caption{Fine-grained split.}
+        \caption{Fine-grained split}
         \label{fig:related-c}
     \end{subfigure}
     % \vspace{-4mm}
     \caption{\textbf{Three categories of distributed CNN inference.}
-    (a)Cloud--edge split offloads every layer beyond a single cut to a cloud server.
-    (b)Layer-wise partition (MoDNN) splits each layer spatially across peer devices that synchronise at layer boundaries.
-    (c)Fine-grained partition fuses work across layers but exchanges data below the layer, at sub-layer boundaries.}
+    (a) Cloud--edge split offloads every layer beyond a single cut to a cloud server.
+    (b) Layer-wise partition (MoDNN) splits each layer spatially across peer devices that synchronise at layer boundaries.
+    (c) Fine-grained partition fuses work across layers but exchanges data below the layer, at sub-layer boundaries.}
     \label{fig:related-work}
 \end{figure}
 

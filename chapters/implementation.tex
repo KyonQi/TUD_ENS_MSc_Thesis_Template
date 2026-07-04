@@ -1,12 +1,25 @@
 \chapter{Implementation}
 \label{chp:implementation}
-
-\textcolor{red}{Need to rephrase}
-This chapter describes the implementation of the system design presented in Chapter~\ref{chp:system_design} on real hardware. The framework consists of two codebases. A Python codebase that implements the preprocessing toolchains and evaluation scripts, and a real deployment codebase that realizes an asynchrnous Python coordinator with a cluster of Teensy 4.1 workers written in C++. We first describe the hardware platform employed in the experiments in Section~\ref{sec:implementation-hardware-platform}. Section~\ref{sec:offline-preprocessing} describes the offline toolchains that compile a pretained model into manifests and firmware. Section~\ref{sec:implementation-worker-runtime} to section\ref{sec:implementation-communication-protocol} describe the runtime implementations of the coordinator and workers on the MCU. We further explains how we validate the numerical correctness of the system in Section~\ref{sec:implementation-validation}. Finally, we discuss some engineering details in Section~\ref{sec:implementation-miscellaneous}.
+This chapter describes the implementation of the system design presented in Chapter~\ref{chp:system_design} on real hardware. 
+The framework consists of two codebases: a Python codebase that implements the preprocessing toolchains and evaluation scripts, and a real deployment codebase that realizes an asynchrnous Python coordinator with a cluster of Teensy 4.1 workers written in C++. 
+We first describe the hardware platform employed in the experiments in Section~\ref{sec:implementation-hardware-platform}. 
+Section~\ref{sec:implementation-offline-toolchain} describes the offline toolchains that compile a pretained model into manifests and firmware. 
+Following this, Section~\ref{sec:implementation-worker-runtime} and Section~\ref{sec:implementation-communication-protocol} describe the runtime implementations of the coordinator and workers on the MCU. 
+We further explains how we validate the numerical correctness of the system in Section~\ref{sec:implementation-validation}. 
+Finally, we discuss some engineering details in Section~\ref{sec:implementation-miscellaneous}.
 
 
 \section{Hardware Platform}
 \label{sec:implementation-hardware-platform}
+
+\begin{figure}[t]
+    \center
+    \includegraphics[width=\linewidth]{figs/testbed3.jpg}
+    \caption{The testbed of 6 Teensy 4.1 MCUs as workers.}
+    % \vspace{-4mm}
+    \label{fig:testbed}
+\end{figure}
+
 Teensy 4.1 board is employed as the worker in our experiments. It is built with an NXP i.MX RT1062 microcontroller. The device has an Arm Cortex-M7 core running at 600 MHz with a hardware floating-point unit. The board has two 512 KB RAM and 8 MB Flash memory without a memory management unit. Network support is provided by an external Ethernet PHY chip with NativeEthernet library. As shown in Figure~\ref{fig:testbed}, the testbed connects up to six boards to a single TP-Link TL-SG116 gigabit switch. To simplify profiling and data collection, a Linux PC servers as the coordinator, while the worker-side execution runs on MCUs.
 
 \section{Offline Toochain}
@@ -33,47 +46,84 @@ Teensy 4.1 board is employed as the worker in our experiments. It is built with 
 \label{tab:impl-manifests}
 \end{table}
 
-As shown in Figure~\ref{fig:tbd}, the offline preprocessing toolchain is a linear pipeline that quantizes a pretrained model, extracts and flattens it into a list of layers, and generates manifests and firmware for the coordinator and workers.
+% As shown in Figure~\ref{fig:system-architecture}, the offline preprocessing toolchain is a linear pipeline that quantizes a pretrained model, extracts and flattens it into a list of layers, and generates manifests and firmware for the coordinator and workers.
+
+As shown in Figure~\ref{fig:system-architecture}, the offline toolchain is a linear pipeline: it quantizes a pretrained model, flattens it into an ordered list of layers, and emits configuration for the system: a single JSON manifest for the coordinator and three C headers for the workers, listed in Table~\ref{tab:impl-manifests}.
+
 
 \paragraph{Quantization and layer extraction.}
-The pipeline starts with a pretrained model in PyTorch. It fuses each convolution with the following batch normalization and activation layer into a single convolution layer with PTQ. An ordered list of layers is then extracted and flattened into a JSON manifest for later usage by the coordinator and workers. \textcolor{red}{Need to rephrase it.}
+% The pipeline starts with a pretrained model in PyTorch. 
+% It fuses each convolution with the following batch normalization and activation layer into a single convolution layer with PTQ. 
+% An ordered list of layers is then extracted and flattened into a JSON manifest for later usage by the coordinator and workers. \textcolor{red}{Need to rephrase it.}
+The pipeline starts from a pretrained PyTorch model.
+Each convolution is fused with its following batch normalization and activation into a single convolution, and the model is quantized to INT8 with post-training quantization (PTQ).
+The fused and quantized network is then flattened into an ordered list of layers, each annotated with its shapes, operator parameters, and quantization parameters.
+This layer list is the metadata from which all manifests are generated, ensuring that the coordinator and the workers remain synchronized.
 
 \paragraph{Coordinator manifest.}
-For the coordinator, the manifest contains a list of layers with their corresponding input and output shapes, as well as the quantization parameters for each layer. The coordinator parses this manifest as a starting point to schedule the execution of the model across the workers. 
+For the coordinator, the manifest contains a list of layers with their corresponding input and output shapes, as well as the quantization parameters for each layer. 
+The coordinator parses this manifest as a starting point to schedule the execution of the model across the workers. 
 
 \paragraph{Worker manifest.}
-\textcolor{red}{Need to rephrase it.}
-For each worker, the toolchain writes three C headers listed in Table~\ref{tab:impl-manifests}. They are all compiled into Flash as read-only arrays that the worker look up at runtime. The weight header holds INT8 weight arrays per layer. The quantization header holds the per-channel weight scales and zero-points, as well as the per-layer input and output quantization parameters. The model structural information is stored in the layer configuration header, which contains the number of input and output channels, kernel size, stride, and padding for each layer. 
-
+% \textcolor{red}{Need to rephrase it.}
+% For each worker, the toolchain writes three C headers listed in Table~\ref{tab:impl-manifests}. 
+% They are all compiled into Flash as read-only arrays that the worker look up at runtime. 
+% The weight header holds INT8 weight arrays per layer. 
+% The quantization header holds the per-channel weight scales and zero-points, as well as the per-layer input and output quantization parameters. 
+% The model structural information is stored in the layer configuration header, which contains the number of input and output channels, kernel size, stride, and padding for each layer. 
+For the workers, the toolchain instead emits the three C headers in Table~\ref{tab:impl-manifests}, which are compiled into Flash as read-only arrays and looked up at runtime.
+Splitting the data across three headers separates the weights, the layer structure, and the quantisation parameters, so each can be accessed independently on the worker without parsing a general-purpose format at runtime.
 
 \section{Coordinator Runtime}
 \label{sec:implementation-coordinator-runtime}
+
+\begin{figure}[t]
+    \center
+    \includegraphics[width=\linewidth]{figs/memory-layout.pdf}
+    \caption{Worker runtime memory layout. RAM1 and RAM2 form a statically-allocated ping-pong buffer for activations. Read-only weights reside in Flash and are loaded into SRAM per execution unit during inference. The computation kernel workspace is carved from the tail of the output buffer.}
+    % \vspace{-4mm}
+    \label{fig:memory-layout}
+\end{figure}
+
 The coordinator is implemented as an asynchronous Python system built on the \verb|asyncio| event loop. Section~\ref{sec:coordinator-design} describes our design of the coordinator. To fully utilize the network bandwidth, the coordinator implements a parallelized I/O interface with \verb|asyncio|. The distributor and collector send and receive data to and from the workers in parallel, so $N$ workers can compute concurrently without waiting for each other. 
 
-To support various execution plan in the coordinator, we abstract and implement a generic \verb|strategy mapper| interface that flattens the layer list into a sequence of execution blocks that the engine drives. \textcolor{red}{Maybe change to system design chapter.} Each model in the framework only needs to define and implement their own \verb|strategy mapper| to support different execution plans. We provide three built-in mappers in the framework for easy usage:
+To support various execution plan in the coordinator, we abstract and implement a generic \verb|strategy mapper| interface that flattens the layer list into a sequence of execution blocks that the engine drives as shown in Figure~\ref{fig:coordinator-components}. Each model in the framework only needs to define and implement their own \verb|strategy mapper| to support different execution plans. We provide two built-in mappers in the framework for easy usage:
 \begin{itemize}
     \item \textbf{Layer}: Each layer is regarded as a single execution unit;
-    \item \textbf{Block}: Each IRB is grouped together as a single execution unit;
-    \item \textbf{Hybrid}: Each IRB is decided to be a single execution unit if the overlap-ratio cost is below the preset threshold, otherwise each layer in the IRB is regarded as a single execution unit.
+    \item \textbf{Block}: Each IRB is decided to be a single execution unit if the overlap-ratio cost is below the preset threshold, otherwise each layer in the IRB is regarded as a single execution unit.
+    % \item \textbf{Hybrid}: Each IRB is decided to be a single execution unit if the overlap-ratio cost is below the preset threshold, otherwise each layer in the IRB is regarded as a single execution unit.
 \end{itemize}
 
-Take MobilenetV2 as an instance, the layer-wise mapper wraps every layer in the IRB and executes them sequentially, while the block-wise mapper scans the layer list and groups all existing IRBs into execution units. The hybrid mapper first scans the layer list and applies the overlap-ratio cost function discussed in Section~\ref{sec:overlap-ratio-cost-model} to each IRB. The candidate block will be splitted back into layers when the ratio exceeds the threshold. 
+% Take MobilenetV2 as an instance, the layer-wise mapper wraps every layer in the IRB and executes them sequentially, while the block-wise mapper scans the layer list and groups all existing IRBs into execution units. The hybrid mapper first scans the layer list and applies the overlap-ratio cost function discussed in Section~\ref{sec:overlap-ratio-cost-model} to each IRB. The candidate block will be splitted back into layers when the ratio exceeds the threshold. 
 
-We make the framework agnostic to the execution mapper .
-The execution framework is agnostic to the strategy mapper. To support a new model, the user only needs to implement a new mapper that inherits the \verb|strategy mapper| interface and designs their own execution plan and register it in the framework. The new mapper can be easily adapted when starting the coordinator with a command-line argument with the mapper name. 
+Take MobilenetV2 as an instance, the layer-wise mapper wraps every layer in the IRB and executes them sequentially, while the block-wise mapper first scans the layer list and applies the overlap-ratio cost function discussed in Section~\ref{sec:overlap-ratio-cost-model} to each IRB. The candidate block will be splitted back into layers when the ratio exceeds the threshold. 
+
+
+We make the framework agnostic to the mapper. To support a new model, the user only needs to implement a new mapper that inherits the \verb|strategy mapper| interface and designs their own execution plan and register it in the framework. The new mapper can be easily adapted when starting the coordinator with a command-line argument with the mapper name. 
 
 \section{Worker Runtime}
 \label{sec:implementation-worker-runtime}
-The worker runtime implements the characteristics of the system design in Chapter~\ref{chp:system_design}. It is written in C++, built on a baremetal MCU environment without RTOS.
+
+
+
+The worker runtime implements the characteristics illustrated in Section~\ref{sec:worker-design}. It is written in C++, built on a baremetal MCU environment without RTOS.
 
 Since the Teensy 4.1 board does not have a memory management unit, we statically allocate a double buffer in the RAM for activations and intermediate results. Static buffers offers deterministic memory addresses, avoiding the overhead of dynamic memory allocation and fragmentation. 
 
-Figure~\ref{fig:tbd} illustrates our memory layout. RAM1 and RAM2 holds a 350 KB buffer respectively. The two buffers are used in a ping-pong manner, where one buffer is used to store the input data and the other buffer is used to store the output data. After each execution unit, the buffers are swapped. The weights are stored in Flash as read-only arrays, which are loaded into the SRAM during the execution of each execution unit. This design allows for efficient memory usage and avoids the need for additional memory allocation during runtime. 
+Figure~\ref{fig:memory-layout} illustrates our memory layout. RAM1 and RAM2 holds a 350 KB buffer respectively. The two buffers are used in a ping-pong manner, where one buffer is used to store the input data and the other buffer is used to store the output data. After each execution unit, the buffers are swapped. The weights are stored in Flash as read-only arrays, which are loaded into the SRAM during the execution of each execution unit. This design allows for efficient memory usage and avoids the need for additional memory allocation during runtime. 
 
 
-Figure~\ref{fig:tbd} demonstrates the state machine of the worker runtime. It starts with the \verb|IDLE| state after establishing a connection with the coordinator. Then it waits and receives the task message in \verb|RECEIVE| state. After receiving, it transitions to \verb|COMPUTE| state to finish the task. Finally, it sends the result message back to the coordinator in \verb|SEND| state and returns to \verb|IDLE| state. The ping-pong buffer mentioned above is used to keep only one input tensor and one output tensor in the SRAM alive at any time, reducing the unnecessary memory footprint at runtime. 
+% Figure~\ref{fig:tbd} demonstrates the state machine of the worker runtime. It starts with the \verb|IDLE| state after establishing a connection with the coordinator. Then it waits and receives the task message in \verb|RECEIVE| state. After receiving, it transitions to \verb|COMPUTE| state to finish the task. Finally, it sends the result message back to the coordinator in \verb|SEND| state and returns to \verb|IDLE| state. The ping-pong buffer mentioned above is used to keep only one input tensor and one output tensor in the SRAM alive at any time, reducing the unnecessary memory footprint at runtime. 
 
-The worker carries several convolution kernels. As shown in Figure~\ref{fig:tbd}, the kernel with smaller latency usually takes up more SRAM memory. Therefore, we implement the naive convolution kernel as well as the Im2Col + GeMM optimized kernel for workers to select during runtime. To further reduce the kernel latency, we also utilize the SIMD instructions of the Arm Cortex-M7 core with \verb|arm_dot_prod_q15| in CMSIS-DSP library [refs]. Im2Col + GeMM kernel is the default kernel for workers to use. It utilizes the scratch space from the tail of the output buffer and falls back to the naive kernel when the space is insufficient.
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{figs/kernel-overlap.pdf}
+    \caption{Different Kernel Computation Compare}
+    \label{fig:kernel-coompare}
+\end{figure}
+
+
+The worker carries several convolution kernels. As shown in Figure~\ref{fig:kernel-coompare}, the kernel with smaller latency usually takes up more SRAM memory. Therefore, we implement the naive convolution kernel as well as the Im2Col + GeMM optimized kernel for workers to select during runtime. To further reduce the kernel latency, we also utilize the SIMD instructions of the Arm Cortex-M7 core with \verb|arm_dot_prod_q15| in CMSIS-DSP library [refs]. Im2Col + GeMM kernel is the default kernel for workers to use. It utilizes the scratch space from the tail of the output buffer and falls back to the naive kernel when the space is insufficient.
 
 
 
