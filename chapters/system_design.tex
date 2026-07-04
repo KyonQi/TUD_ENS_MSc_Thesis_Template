@@ -126,35 +126,76 @@ The online part of Algorithm~\ref{alg:plan-execute} (lines~\ref{ln:online-start}
 \begin{figure}[t]
     \center
     \includegraphics[width=\linewidth]{figs/coordinator-components.pdf}
-    \caption{coordinator-components.}
+    \caption{Component architecture of the coordinator.
+    The inference engine drives execution and holds all inference state, reaching the worker manager and the task distributor through a unified interface.
+    The task distributor obtains its block grouping strategy from a pluggable strategy mapper provided by the offline plan, and all components run on a shared asynchronous I/O event loop.}
     % \vspace{-4mm}
     \label{fig:coordinator-components}
 \end{figure}
 
-
-
-\textcolor{red}{Add a figure to illustrate the components in coordinator}
-The coordinator is an event-driven server, built on an asynchronous I/O event loop to handle multiple concurrent connections from workers. As shown in Figure~\ref{fig:tbd}, it is organized into a set of decoupled components, including:
+The coordinator is an event-driven server, built on an asynchronous I/O event loop to handle multiple concurrent connections from workers.
+As shown in Figure~\ref{fig:coordinator-components}, it is organized into a set of decoupled components:
 \begin{itemize}
-    \item \textbf{Worker manager}: It maintains the connection state of each worker, containing the network connections and the message framing;
-    \item \textbf{Inference engine}: It drives the execution based on the preprocessed plan, abd holds all inference states;
-    \item \textbf{Task distributor}: It performs the splitting of workload and the communication with workers. Tasks are assigned to workers with a pluggable \emph{strategy mapper} that supplies the block grouping decided offline.
+    \item \textbf{Worker manager}: maintains the connection state of each worker, including the network connections and the message framing;
+    \item \textbf{Inference engine}: drives the execution based on the preprocessed execution plan and holds all inference state;
+    \item \textbf{Task distributor}: performs the workload splitting and the communication with workers. Tasks are assigned through a pluggable \emph{strategy mapper} that supplies the block grouping decided offline.
 \end{itemize}
 
-The design principle of the coordinator is to abstract the independent components and provide a unified interface for the inference engine to drive the execution. The inference engine is agnostic to \emph{how} tasks reach workers, which is the distributor's responsibility, and to \emph{how} layers are grouped into blocks, which is the strategy mapper's responsibility. This decoupling design allows for flexibility in the implementation of the coordinator. A single engine could easily support different models on different number of workers, and different strategies for block grouping and task distribution. \textcolor{red}{Maybe need to rephrase it.}
 
-\paragraph{Worker Manager.} 
-The worker manager abstracts the network transport from the rest of the system. When a worker tries to connect to the coordinator, it will first go through a short registration handshake defined in the application layer. The worker needs to announce itself and provide its clock frequency, so the coordinator can reply with an assigned unique worker ID. \textcolor{red}{Each connection is tracked by a state machine that handles the connection state and the message framing.} Idle workers are kept in a queue from which the engine draws when dispatching the next round of tasks. \textcolor{red}{Nagle's algorithm is
-disabled on each connection so that small task descriptors are sent without delay.}
+% The guiding principle is to keep these components independent behind a unified interface that the inference engine uses to drive execution.
+The design principle of the coordinator is to abstract the independent components and provide a unified interface for the inference engine to drive the execution.
+The engine is agnostic to \emph{how} tasks reach workers, which is the distributor's responsibility, and to \emph{how} layers are grouped into blocks, which is the strategy mapper's responsibility.
+This decoupling makes the coordinator flexible: a single engine can support different models, different numbers of workers, and different strategies for block grouping and task distribution without modification.
+
+% \paragraph{Worker Manager.} 
+% The worker manager abstracts the network transport from the rest of the system. When a worker tries to connect to the coordinator, it will first go through a short registration handshake defined in the application layer. 
+% The worker needs to announce itself and provide its clock frequency, so the coordinator can reply with an assigned unique worker ID. 
+% \textcolor{red}{Each connection is tracked by a state machine that handles the connection state and the message framing.} 
+% Idle workers are kept in a queue from which the engine draws when dispatching the next round of tasks. \textcolor{red}{Nagle's algorithm is disabled on each connection so that small task descriptors are sent without delay.}
+
+% Connection manager is responsible for establishing and maintaining the TCP connections with workers. 
+% It maintains and hadles the connection state of each worker, including the network connections and the message framing. 
+% It also provides a unified interface for the inference engine to send and receive messages to/from workers. 
+% The connection manager is designed to be robust and fault-tolerant, handling worker disconnections and reconnections gracefully.
+
+\paragraph{Worker Manager.}
+The worker manager abstracts the network transport from the rest of the system and owns the TCP connection to each worker.
+When a worker connects, it first completes a short registration handshake defined at the application layer: the worker announces itself and reports its clock frequency, and the coordinator replies with a unique worker ID.
+Each connection is then tracked by a state machine that maintains the connection state and handles message framing.
+% Nagle's algorithm is disabled on every connection so that small task descriptors are sent without delay.
+Idle workers are held in a queue from which the inference engine draws when dispatching the next round of tasks.
+When the manager detects a disconnection from the workers, it immediately shuts down and resets the status of all existing connections, keeping the transport robust and fault-tolerant.
+% Disconnections and reconnections are handled gracefully, keeping the transport robust and fault-tolerant.
+
+% \paragraph{Inference Engine.} 
+% The inference engine is a stateful core of the coordinator, which drives the execution of the inference plan. It maintains the state of the inference process, including the current layer/block being executed, the input/output activations, and the intermediate results. 
+
+% \textcolor{red}{Figure~\ref{fig:tbd} illustrates the state machine of the inference engine.}  
+% Upon finishing the TCP handshake with the worker, the engine transitions to the \emph{WAIT} state, waiting for applicatin confirmation from the worker. 
+% Once the worker is ready and sends a \emph{READY} message, the engine immediately wrapps and sends the first task to the worker, and transitions to the \emph{IDLE} state, waiting for the \emph{Result} defined in the protocol. 
+% Upon receiving the result, the engine updates the inference state and sends the next task to the worker. 
+% The engine continues this process until all tasks are completed, and transitions back to the \emph{IDLE} state, waiting for the next inference request. The engine also handles error conditions, such as worker disconnections or timeouts, and can retry or reassign tasks as needed.
 
 
-Connection manager is responsible for establishing and maintaining the TCP connections with workers. It maintains and hadles the connection state of each worker, including the network connections and the message framing. It also provides a unified interface for the inference engine to send and receive messages to/from workers. The connection manager is designed to be robust and fault-tolerant, handling worker disconnections and reconnections gracefully.
+\paragraph{Inference Engine.}
+The inference engine is the stateful core of the coordinator and drives the execution of the inference plan.
+It maintains the state of the inference process, including the current block or layer being executed, the input and output activations, and the intermediate results.
 
-\paragraph{Inference Engine.} 
-The inference engine is a stateful core of the coordinator, which drives the execution of the inference plan. It maintains the state of the inference process, including the current layer/block being executed, the input/output activations, and the intermediate results. 
+Figure~\ref{fig:coordinator-workflow} illustrates the coordinator's workflow as the messages exchanged among its components and the workers.
+A worker first joins through a registration handshake: it sends a \emph{Register} message to the worker manager, which replies with an \emph{ACK} once the worker has been assigned an ID.
+Driven by the engine, the task distributor then consults the \emph{strategy mapper} for the block grouping decided offline and dispatches the per-worker tasks to the worker manager.
+The worker manager forwards each task to its worker as a \emph{Task} message and, once the worker finishes, returns the corresponding \emph{Result} message.
+The distributor collects these results and issues an \emph{Update Inference} to the engine, which updates the inference state and advances to the next block.
+This loop repeats until every block in the plan has been executed. During the inference, the engine also handles error conditions such as worker disconnections or timeouts, retrying or reassigning tasks as needed.
 
-\textcolor{red}{Figure~\ref{fig:tbd} illustrates the state machine of the inference engine.}  Upon finishing the TCP handshake with the worker, the engine transitions to the \emph{WAIT} state, waiting for applicatin confirmation from the worker. Once the worker is ready and sends a \emph{READY} message, the engine immediately wrapps and sends the first task to the worker, and transitions to the \emph{IDLE} state, waiting for the \emph{Result} defined in the protocol. Upon receiving the result, the engine updates the inference state and sends the next task to the worker. The engine continues this process until all tasks are completed, and transitions back to the \emph{IDLE} state, waiting for the next inference request. The engine also handles error conditions, such as worker disconnections or timeouts, and can retry or reassign tasks as needed.
 
+\begin{figure}[t]
+    \center
+    \includegraphics[width=\linewidth]{figs/coordinator-workflow.pdf}
+    \caption{Coordinator workflow. Messages exchanged among the inference engine, task distributor, worker manager, and a worker during one round of execution.}
+    % \vspace{-4mm}
+    \label{fig:coordinator-workflow}
+\end{figure}
 
 \paragraph{Task Distribution.} 
 The task distributor carries out the splitting of workload and the communication with workers. Compared with the \emph{inference engine}, it is stateless with respect to the inference process. Consider a layer (or block) that consumes a feature map of shape $(C,H,W)$, where $C$ is the number of channels, $H$ is the height, and $W$ is the width, and whose convolution has kernel size $k$, stride $s$, and padding $p$. The output height of this layer is
@@ -175,7 +216,7 @@ Due to the nature of convolution, the input rows required by worker $i$ have to 
     i_e^i &= \min\left(o_e^i s - p + k, H\right).
 \end{align}  
 
-\textcolor{red}{Therefore, two adjacent workers $i$ and $i+1$ have overlapping input rows bounded by $k-s$ rows.} It is the redundant computation overhead that will be further discussed in Section~\ref{sec:overlap-ratio-cost-model}. 
+Therefore, two adjacent workers $i$ and $i+1$ have overlapping input rows bounded by $k-s$ rows. It is the redundant computation overhead that will be further discussed in Section~\ref{sec:overlap-ratio-cost-model}. 
 
 For the fully connected layer, the distributor simply splits the the layer by output class with $N$ chunks and assigns worker $i$ to compute the output classes $[o_s^i, o_e^i)$, where
 \begin{align}
@@ -184,42 +225,92 @@ For the fully connected layer, the distributor simply splits the the layer by ou
 \end{align}
 
 \subsection{Worker Design}
-\textcolor{red}{Could draw a workflow fig with the stick one.} A worker is a executor driven entirely by the task it receives from the coordinator. As shown in Figure~\ref{fig:tbd}, upon receiving a task, it
-\begin{enumerate}
-    \item reconstructs the input activations from the received data, and loads the corresponding weights from Flash;
-    \item selects the appropriate computation kernel based on the layer type and available memory resources;
-    \item returns the computed output activations to the coordinator, and waits for the next task.
-\end{enumerate}
+\begin{figure}[t]
+    \center
+    \includegraphics[width=\linewidth]{figs/worker_state_machine.pdf}
+    \caption{Worker state machine, comprising an initialization phase (\emph{Disconnected} through \emph{Idle}) and an event-driven loop that processes one task at a time.}
+    % \vspace{-4mm}
+    \label{fig:worker-state-machine}
+\end{figure}
 
-\textcolor{red}{Communication overhead between the coordinator and workers is the main bottleneck of the system. To alleviate this, we have implemented two core optimization techniques: \emph{block-wise local execution} and \emph{cross-block data reuse}. We will discuss these techniques in detail in the following sections, along with the conditions under which they can be applied and their impact on system performance.}
+A worker is a lightweight executor driven entirely by the tasks it receives from the coordinator without a scheduler of its own.
+As shown in Figure~\ref{fig:worker-state-machine}, there are two phases during its life cycle.
+
+During the \emph{initialization phase}, the worker moves from \emph{Disconnected} to \emph{Connecting} as it establishes the TCP connection, then to \emph{Registering}, where it completes the registration handshake with the worker manager (Section~\ref{sec:coordinator-design}) by announcing itself and receiving its worker ID in the application layer.
+It then settles into \emph{Idle}, ready to serve tasks.
+
+The worker then runs an \emph{event-driven loop}. On receiving a task it enters \emph{Receiving Task}, reconstructs the input activations from the received data, and loads the corresponding weights from Flash.
+It transitions to \emph{Computing}, where it selects the appropriate computation kernel based on the layer type and the available memory, and performs the computation.
+Finally, in \emph{Sending Result} it returns the output activations to the coordinator and falls back to \emph{Idle} to await the next task.
+A malformed or out-of-order task instead takes the \emph{Task Invalid} transition, which is reported to the coordinator rather than executed.
+
+
+
+
 
 \subsection{Protocol Design}
-The coordinator and workers communicate over a custom, lightweight protocol built on top of TCP/IP. \textcolor{red}{As illustrated in Table~\ref{tab:tbd}, every message begins with a fixed-byte header that indicates the message type and payload length, followed by the typed payload.} Figure~\ref{fig:tbd} shows the basic message flow: (i) a worker registers and reports its status; (ii) the coordinator acknowledges with an assigned identifier; (iii) the coordinator then issues \textsc{TASK} messages and receives \textsc{RESULT} messages until the inference is complete.
+\textcolor{red}{Still need tables for message structure.}
+The coordinator and workers communicate over a custom, lightweight protocol built on top of TCP/IP. \textcolor{red}{As illustrated in Table~\ref{tab:tbd}, every message begins with a fixed-byte header that indicates the message type and payload length, followed by the typed payload.} Figure~\ref{fig:coordinator-workflow} shows the basic message flow: (i) a worker registers and reports its status; (ii) the coordinator acknowledges with an assigned identifier; (iii) the coordinator then issues \textsc{TASK} messages and receives \textsc{RESULT} messages until the inference is complete.
 
 Table~\ref{tab:tbd} summarizes the information carried in \textsc{TASK} message to support a worker in executing a layer or block. \textcolor{red}{the layer or block index range, the input and output dimensions, the convolution parameters, the per-worker depthwise height padding $p^i_{\mathrm{top}}, p^i_{\mathrm{bot}}$ from (\ref{eq:sd-inpad}), and the cross-block reuse fields---whether to reconstruct the input from the local cache, how many boundary rows are sent, which cached rows to use, and whether to return only boundary rows. The \textsc{Result} message returns the compute timing and the output size, followed by the output bytes. The concrete byte-level encoding and the matching layouts on the Python and C++ sides are deferred to the implementation chapter.}
  
-
+% To optimize performance and resource utilization, we have implemented a block-wise local execution strategy. This approach allows us to process data in smaller chunks, reducing memory overhead and improving execution speed. Each block is processed independently, allowing for parallel execution and better load balancing across the system. This design choice also enhances fault tolerance, as failures in one block do not affect the processing of others.
 \section{Block-wise Local Execution}
 \label{sec:block-wise-local-execution}
-% To optimize performance and resource utilization, we have implemented a block-wise local execution strategy. This approach allows us to process data in smaller chunks, reducing memory overhead and improving execution speed. Each block is processed independently, allowing for parallel execution and better load balancing across the system. This design choice also enhances fault tolerance, as failures in one block do not affect the processing of others.
 
-A natural strategy to orchestrate the distributed execution of a CNN is to split the model in a layer-wise manner, where the coordinator splits a layer by rows, dispatches the tasks to workers, collects the partial outputs, reassambles the full feature map, and re-scatters it for the next layer. This strategy is simple and straightforward, widely adopted by most distributed inference runtimes~\cite{tbd,tbd}. However, it incurs a significant communication overhead for IRB-based CNNs as discussed in~\ref{sec:tbd}. After the expanding layer, the number of channels is expanded by a factor of $e$, resulting in a large feature map that have to be communicated between the coordinator and workers. This large feature map traverses the network twice and must be held in full at the coordinator, which is a significant bottleneck for resource-constrained MCUs. 
 
-Our block-wise local execution strategy moves the communication boundary from the layer to the block. As shown in Figure~\ref{fig:tbd}, instead of communicating every layer, each worker executes the entire IRB locally on its assigned spatial input slice. The coordinator only sends the worker block input and receices only projection output, which is typically $e$ times smaller than the expanding output. The expanded activation is materialized locally in the worker buffer and is never transmitted over the network. \textcolor{red}{For the first IRB of MobileNetV2, our block-wise local execution strategy reduces the unnecessary communication overhead up to 1176~KB.}
+\begin{figure}[t]
+  \centering
+  \begin{subfigure}{0.45\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figs/fig_compare_a_sub.pdf}
+    % \vspace{-2mm}
+    \caption{Layer-wise communication.}
+    \label{fig:sub_a}
+  \end{subfigure}
+  \hspace{2mm}
+  \begin{subfigure}{0.45\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{figs/fig_compare_b_sub.pdf}
+    % \vspace{-2mm}
+    \caption{Block-wise local execution.}
+    \label{fig:sub_b}
+  \end{subfigure}
+  % \vspace{-3mm}
+\caption{Layer-wise comm. vs. block-wise local execution.}
+  \label{fig:block-wise-local-execution}
+  % \vspace{-4mm}
+\end{figure}
+
+
+A natural strategy to orchestrate the distributed execution of a CNN is to split the model in a layer-wise manner, where the coordinator splits a layer by rows, dispatches the tasks to workers, collects the partial outputs, reassembles the full feature map, and re-scatters it for the next layer. 
+This strategy is simple and straightforward, widely adopted by most distributed inference runtimes~[\textcolor{red}{refs}]. 
+
+However, it incurs a significant communication overhead for IRB-based CNNs as discussed in Section~\ref{sec:IRB}. 
+After the expanding layer, the number of channels is expanded by a factor of $e$, resulting in a large feature map that must be communicated between the coordinator and workers. 
+This large feature map traverses the network twice and must be held in full at the coordinator, which is a significant bottleneck for resource-constrained MCUs. 
+
+
+Our Block-wise local execution moves the communication boundary from the layer to the block.
+As shown in Figure~\ref{fig:block-wise-local-execution}, instead of exchanging data at every layer, each worker executes an entire IRB locally on its assigned spatial input slice.
+The coordinator sends only the block input and receives only the projected output, which is typically $e$ times smaller than the expanded activation.
+The expanded activation is materialized in the worker's local buffer and never leaves the device.
+For the first IRB of MobileNetV2, this removes up to 1176~KB of intermediate traffic per inference.
+
 
 \paragraph{Coordinator Memory.}
-Besides the reduction in communication overhead, block-wise local execution also reduces the memory footprint of the coordinator. Under layer-wise strategy, the coordinator must hold the entire feature map of the expanding layer, which usually dominates the SRAM memory usage of the coordinator.
-
-\textcolor{red}{Need to think if it's calculated correctly.}
-Consider one IRB with the input shape $(C_{\mathrm{input}}, H_{\mathrm{input}}, W_{\mathrm{input}})$, an expansion ratio $e$, and the block output shape $(C_{\mathrm{out}}, H_{\mathrm{out}}, W_{\mathrm{out}})$, the peak memory footprint of the coordinator under layer-wise strategy could be calculated as follows:
+Beyond the traffic reduction, block-wise local execution also shrinks the coordinator's memory footprint.
+Under the layer-wise strategy, the coordinator must hold the entire expanded feature map, which typically dominates its SRAM usage.
+Consider one IRB with input shape $(C_{\mathrm{in}}, H_{\mathrm{in}}, W_{\mathrm{in}})$, expansion ratio $e$, and output shape $(C_{\mathrm{out}}, H_{\mathrm{out}}, W_{\mathrm{out}})$.
+Its peak coordinator memory under the layer-wise strategy is approximately
 \begin{equation}
-\mathcal{M}^{\mathrm{layer}}_{\mathrm{coord}}(B) \approx e C_{\mathrm{input}} H_{\mathrm{input}} W_{\mathrm{input}} + C_{\mathrm{out}} H_{\mathrm{out}} W_{\mathrm{out}}.
+\mathcal{M}^{\mathrm{layer}}_{\mathrm{coord}}(B) \approx e\, C_{\mathrm{in}} H_{\mathrm{in}} W_{\mathrm{in}} + C_{\mathrm{out}} H_{\mathrm{out}} W_{\mathrm{out}}.
 \label{eq:sd-mem-layer}
 \end{equation}
 
 Our block-wise local execution removes the former expanded term completely. The coordinator only needs to hold the block input and output activation. The peak memory footprint of the coordinator under block-wise strategy is therefore:
 \begin{equation}
-\mathcal{M}^{\mathrm{block}}_{\mathrm{coord}}(B) \approx C_{\mathrm{input}} H_{\mathrm{input}} W_{\mathrm{input}} + C_{\mathrm{out}} H_{\mathrm{out}} W_{\mathrm{out}}.
+\mathcal{M}^{\mathrm{block}}_{\mathrm{coord}}(B) \approx C_{\mathrm{in}} H_{\mathrm{in}} W_{\mathrm{in}} + C_{\mathrm{out}} H_{\mathrm{out}} W_{\mathrm{out}}.
 \end{equation}
 
 Since the output activation is typically much smaller than the expanded activation, the block-wise local execution strategy significantly reduces the memory footprint of the coordinator to:
@@ -229,27 +320,33 @@ Since the output activation is typically much smaller than the expanded activati
 
 Take the first IRB of MobileNetV2 as an instance, a layer-wise coordinator must hold the block input and the expanded activation, requiring $196$ KB $+$ $1176$ KB = $1372$ KB. With block-wise local execution, the coordinator only handles the block input and the projected output, reducing the footprint to $196$ KB $+$ $73.5$ KB $=$ $269.5$ KB, which is approximately $\frac{1}{e}$ ($e=6$) of the layer-wise strategy.
 
-
-\paragraph{Communication Saving.}
-\textcolor{red}{Maybe further discussed about the saving in mathmatical.}
-
-
-\subsection{Overlap-ratio Cost Model}
+\paragraph{Overlap-ratio Cost Model.}
 \label{sec:overlap-ratio-cost-model}
-% We have implemented a hybrid scheduling mechanism that combines the benefits of both centralized and decentralized approaches. This allows for more efficient resource allocation and load balancing across the system.
-Block-wise local execution trades communication for computation, as each worker must compute the overlapping input rows required by its neighbors. Figure~\ref{fig:tbd} illustrates the overlapping input rows for two adjacent workers $i$ and $i+1$. The number of overlapping rows between two adjacent workers is determined by the kernel size $k$ and stride $s$ of the convolution, and is given by:
+
+\begin{figure}[t]
+    \center
+    \includegraphics[width=\linewidth]{figs/kernel-overlap.pdf}
+    \caption{Overlap.}
+    % \vspace{-4mm}
+    \label{fig:kernel-overlap}
+\end{figure}
+
+Block-wise local execution trades communication for computation, as each worker must compute the overlapping input rows required by its neighbors. Figure~\ref{fig:kernel-overlap} illustrates the overlapping input rows for two adjacent workers $i$ and $i+1$. The number of overlapping rows between two adjacent workers is determined by the kernel size $k$ and stride $s$ of the convolution, and is given by:
 \begin{equation}
     R_{\mathrm{overlap}} = k - s.
     \label{eq:overlap}
 \end{equation}
 
-\textcolor{red}{need to rephrase the whole.}
-Under layer-wise strategy, there is no redundant computation for the overlapping rows, since output rows are partitioned and assigned to workers only once. However, under block-wise local execution, although the output rows of projection layer are still partitioned and assigned to workers only once, each worker must compute the overlapped slice during the local execution of the depthwise convolution as shown in Figure~\ref{fig:tbd}. We capture this overlapped redundancy with the \emph{overlap ratio}:
+Under layer-wise strategy, there is no redundant computation for the overlapping rows, since output rows are partitioned and assigned to a single worker only once. 
+However, under block-wise local execution, although the output rows of projection layer are still partitioned and assigned to workers only once, each worker must compute the overlapped slice during the local execution of the depthwise convolution as shown in Figure~\ref{fig:kernel-overlap}. We capture this overlapped redundancy with the \emph{overlap ratio}:
 \begin{equation}
     \rho = \frac{1}{H}\sum_{i=0}^{N-1}(y_e^i - y_s^i),
     \label{eq:overlap-ratio}
 \end{equation}
-where $H$ is the height of the input feature map, $N$ is the number of workers, and $[y_s^i, y_e^i)$ is the input row range assigned to worker $i$. The overlap ratio $\rho$ represents the fraction of the input feature map that is redundantly computed by multiple workers. A higher overlap ratio indicates more redundant computation, which can offset the communication savings achieved by block-wise local execution. The ideal $\rho=1$ indicates there is no overlap among the workers, whereas $\rho\to N$ is the worst case where all workers has to contain the entire input feature map.
+where $H$ is the height of the input feature map, $N$ is the number of workers, and $[y_s^i, y_e^i)$ is the input row range assigned to worker $i$. 
+The overlap ratio $\rho$ represents the fraction of the input feature map that is redundantly computed by multiple workers. 
+A higher overlap ratio indicates more redundant computation, which can offset the communication savings achieved by block-wise local execution. 
+The ideal $\rho=1$ indicates there is no overlap among the workers, whereas $\rho\to N$ is the worst case where all workers has to contain the entire input feature map.
 
 Combined~(\ref{eq:overlap}) with~(\ref{eq:overlap-ratio}), we can express the overlap ratio as a function of the kernel size $k$, stride $s$, and the number of workers $N$:
 \begin{equation}
@@ -259,9 +356,9 @@ Combined~(\ref{eq:overlap}) with~(\ref{eq:overlap-ratio}), we can express the ov
 
 (\ref{eq:overlap-ratio-func}) demonstrates three key factors that affect the overlap ratio: 
 \begin{itemize}
-    \item The number of workers $N$: $\rho$ grows with the worer count, indicating that finer partitioning of the input feature map leads to more overlap and redundant computation.
-    \item The kernel size $k$ and stride $s$: A larger kernel size or a smaller stride increases the number of overlapping rows due to the nature of the convolution, leading to a higher overlap ratio.
-    \item The height of the input feature map $H$: A taller input feature map reduces the overlap ratio, as the overlapping rows become a smaller fraction of the total input.
+    \item Number of workers $N$: $\rho$ grows with the worer count, indicating that finer partitioning of the input feature map leads to more overlap and redundant computation.
+    \item Kernel size $k$ and stride $s$: A larger kernel size or a smaller stride increases the number of overlapping rows due to the nature of the convolution, leading to a higher overlap ratio.
+    \item Height of the input feature map $H$: A taller input feature map reduces the overlap ratio, as the overlapping rows become a smaller fraction of the total input.
 \end{itemize}
 
 Therefore, the block-wise local execution effect is therefore strongly position-dependent. For an early high-resolution block where $H=112$ with a $3\times3$ depthwise kernel on $N=4$ workers, the overlap ratio is $\rho\approx 1.05$, indicating a nearly free gain. However, for a deep low-resolution block where $H=7$ with a larger $5\times5$ kernel on $N=4$ workers, the overlap ratio is $\rho\approx 2.7$, indicating a significant amount of redundant computation that can easily offset the communication savings.
@@ -301,7 +398,7 @@ which is produced by the neighbouring workers $i-1$ and $i+1$.
 
 Therefore, on the downlink the coordinator forwards only the boundary rows each worker lacks instead of a full input patch. On the uplink a worker returns only the boundary rows its neighbours will need instead of its full output. The interior rows are never transmitted over the network, which significantly reduces the communication overhead between consecutive blocks. The coordinator now holds only boundaries and acts as a lightweight scheduler rather than a full data aggregator, lowering its peak memory footprint. 
 
-\subsection{Conditions to Enable Cross-block Data Reuse}
+\paragraph{Conditions to Enable Cross-block Data Reuse.}
 \label{sec:cross-conditions}
 % Some conditions for cross-block data reuse include:
 % \begin{itemize}
