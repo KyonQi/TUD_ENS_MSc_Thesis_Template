@@ -250,10 +250,40 @@ A malformed or out-of-order task instead takes the \emph{Task Invalid} transitio
 
 
 \subsection{Protocol Design}
-\textcolor{red}{Still need tables for message structure.}
-The coordinator and workers communicate over a custom, lightweight protocol built on top of TCP/IP. \textcolor{red}{As illustrated in Table~\ref{tab:tbd}, every message begins with a fixed-byte header that indicates the message type and payload length, followed by the typed payload.} Figure~\ref{fig:coordinator-workflow} shows the basic message flow: (i) a worker registers and reports its status; (ii) the coordinator acknowledges with an assigned identifier; (iii) the coordinator then issues \textsc{TASK} messages and receives \textsc{RESULT} messages until the inference is complete.
+% \textcolor{red}{Still need tables for message structure.}
+% The coordinator and workers communicate over a custom, lightweight protocol built on top of TCP/IP. \textcolor{red}{As illustrated in Table~\ref{tab:tbd}, every message begins with a fixed-byte header that indicates the message type and payload length, followed by the typed payload.} Figure~\ref{fig:coordinator-workflow} shows the basic message flow: (i) a worker registers and reports its status; (ii) the coordinator acknowledges with an assigned identifier; (iii) the coordinator then issues \textsc{TASK} messages and receives \textsc{RESULT} messages until the inference is complete.
 
-Table~\ref{tab:tbd} summarizes the information carried in \textsc{TASK} message to support a worker in executing a layer or block. \textcolor{red}{the layer or block index range, the input and output dimensions, the convolution parameters, the per-worker depthwise height padding $p^i_{\mathrm{top}}, p^i_{\mathrm{bot}}$ from (\ref{eq:sd-inpad}), and the cross-block reuse fields---whether to reconstruct the input from the local cache, how many boundary rows are sent, which cached rows to use, and whether to return only boundary rows. The \textsc{Result} message returns the compute timing and the output size, followed by the output bytes. The concrete byte-level encoding and the matching layouts on the Python and C++ sides are deferred to the implementation chapter.}
+% Table~\ref{tab:tbd} summarizes the information carried in \textsc{TASK} message to support a worker in executing a layer or block. \textcolor{red}{the layer or block index range, the input and output dimensions, the convolution parameters, the per-worker depthwise height padding $p^i_{\mathrm{top}}, p^i_{\mathrm{bot}}$ from (\ref{eq:sd-inpad}), and the cross-block reuse fields---whether to reconstruct the input from the local cache, how many boundary rows are sent, which cached rows to use, and whether to return only boundary rows. The \textsc{Result} message returns the compute timing and the output size, followed by the output bytes. The concrete byte-level encoding and the matching layouts on the Python and C++ sides are deferred to the implementation chapter.}
+
+To support the coordinator-worker architecture, we design a custom, lightweight protocol on top of TCP/IP. Based on the coordinator and worker system design, the protocol needs to obey the following principles: 
+\begin{itemize}
+    \item It must admit the workers dynamically and bind each physical device to the logical worker ID assigned by the coordinator. This allows the coordinator to manage a set of workers dynamically, and to assign tasks accordingly;
+    \item It must carry the task descriptions that allow the workers to execute a layer or block of the CNN model from the descriptor, including the layer or block index range, the input and output dimensions, and the necessary convolution parameters. This allows the workers to execute the assigned tasks without any prior knowledge of the model structure;
+    \item It must frame variable-size payloads reliably over TCP byte stream. This allows the system to transfer messages of arbitrary size;
+    \item It must support our proposed optimizations, including block-wise local execution (Section~\ref{sec:block-wise-local-execution}) and cross-block data reuse (Section~\ref{sec:cross-block-data-reuse}). This allows the system to reduce communication overhead and improve performance.
+\end{itemize}
+
+These requirements lead to a small custom binary protocol on top of TCP.
+TCP provides the reliable and ordered delivery that multi-kilobyte tensor transfers need, which a datagram transport such as UDP would fail and have to rebuild by hand.
+A custom binary encoding, rather than a general serialisation format, keeps the parsing cost on the worker near zero.
+Each message is a fixed-layout record that the MCU reads directly into a structure, without any parser code, dynamic allocation, or per-field interpretation.
+The generality of a self-describing format brings little cost, since the descriptor spans only tens of bytes while the payloads frames span hundreds of times than the header, up to kilobytes.
+TCP also helps in managing the flow of data. The protocol needs no sequence numbers or flow control of its own, allieviating the burden on the system.
+Each worker holds at most one computation task, and the plan already fixes a total order over the steps, so a stop-and-wait rhythm of one task and one result per round is all the coordination the system requires.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
  
 % To optimize performance and resource utilization, we have implemented a block-wise local execution strategy. This approach allows us to process data in smaller chunks, reducing memory overhead and improving execution speed. Each block is processed independently, allowing for parallel execution and better load balancing across the system. This design choice also enhances fault tolerance, as failures in one block do not affect the processing of others.
 \section{Block-wise Local Execution}
