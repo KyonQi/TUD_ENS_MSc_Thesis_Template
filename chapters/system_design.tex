@@ -250,38 +250,160 @@ A malformed or out-of-order task instead takes the \emph{Task Invalid} transitio
 
 
 \subsection{Protocol Design}
+\label{sec:protocol-design}
+
+\begin{table}[t]
+\centering
+\caption{Message types of the protocol.}
+\label{tab:message-type}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{l l p{6.2cm}}
+% \hline\hline
+\hline
+\textbf{Message} & \textbf{Direction} & \textbf{Purpose} \\
+\hline
+\textsc{Register} & worker $\rightarrow$ coordinator &
+announce the device and report its clock frequency \\
+\textsc{Register Ack} & coordinator $\rightarrow$ worker &
+accept the worker and assign its logical identifier to the physical device \\
+\textsc{Task} & coordinator $\rightarrow$ worker &
+carry one plan entry as a descriptor followed by its tensor payload \\
+\textsc{Result} & worker $\rightarrow$ coordinator &
+return the on-device timing followed by the output rows \\
+\textsc{Error} & worker $\rightarrow$ coordinator &
+report a typed failure, such as a stale reuse cache or an exhausted buffer \\
+\textsc{Shutdown} & coordinator $\rightarrow$ worker &
+end the session \\
+\hline
+% \hline\hline
+\end{tabular}
+\end{table}
+
+
+To support the coordinator--worker architecture, we design a custom, lightweight protocol on top of TCP/IP.
+Following the coordinator and worker designs, the protocol must satisfy four requirements:
+\begin{itemize}
+    \item \textbf{Dynamic admission.} It must admit workers dynamically and bind each physical device to the logical worker ID assigned by the coordinator, so that the coordinator can manage the worker set and assign tasks at runtime.
+    \item \textbf{Self-contained tasks.} It must carry a task descriptor complete enough for a worker to execute a layer or block without prior knowledge of the model, such as the layer or block index range, the input and output dimensions, and the convolution parameters.
+    \item \textbf{Reliable framing.} It must frame variable-size payloads reliably over the TCP byte stream, so that messages of arbitrary size can be transferred.
+    \item \textbf{Optimization support.} It must express our two optimizations, block-wise local execution (Section~\ref{sec:block-wise-local-execution}) and cross-block data reuse (Section~\ref{sec:cross-block-data-reuse}), so their boundary and reuse decisions can be encoded per task.
+\end{itemize}
+
+
+% These requirements lead to a small custom binary protocol on top of TCP.
+% TCP provides the reliable and ordered delivery that multi-kilobyte tensor transfers need, which a datagram transport such as UDP would fail and have to rebuild by hand.
+% A custom binary encoding, rather than a general serialisation format, keeps the parsing cost on the worker near zero.
+% Each message is a fixed-layout record that the MCU reads directly into a structure, without any parser code, dynamic allocation, or per-field interpretation.
+% The generality of a self-describing format brings little cost, since the descriptor spans only tens of bytes while the payloads frames span hundreds of times than the header, up to kilobytes.
+% TCP also helps in managing the flow of data. The protocol needs no sequence numbers or flow control of its own, allieviating the burden on the system.
+% Each worker holds at most one computation task, and the plan already fixes a total order over the steps, so a stop-and-wait rhythm of one task and one result per round is all the coordination the system requires.
+
+These requirements lead to a small custom binary protocol over TCP, with three design decisions.
+
+First, we build on TCP rather than a datagram transport.
+Multi-kilobyte tensor transfers need reliable, ordered delivery. Over UDP, the protocol would have to rebuild those guarantees by hand.
+TCP also contains the built-in flow control, so the protocol does not need sequence numbers or windowing of its own.
+
+Second, we use a custom binary encoding rather than a general serialisation format, which keeps the worker's parsing cost near zero.
+Each message is a fixed-layout record that the MCU reads directly into a struct, with no parser, dynamic allocation, or per-field interpretation.
+A self-describing format would cost little here, since the descriptor spans only tens of bytes, while the payload it accompanies is hundreds of times larger, up to several kilobytes.
+
+Third, the transport rhythm is stop-and-wait.
+Each worker holds at most one task, and the offline plan already fixes a total order over the steps, so one task and one result per round is all the coordination the system needs---no reordering or in-flight windowing on top of TCP.
+
+\paragraph{Message type.}
+As illustrated in Table~\ref{tab:message-type}, the protocol defines six message types, grouped by inference phase in Figure~\ref{fig:coordinator-workflow}.
+In the initialization phase, a worker announces itself with a \emph{registration} message reporting its clock frequency, and the coordinator replies with an \emph{acknowledge} message carrying an assigned worker identifier.
+This identifier binds the physical device to the logical index the plan refers to, so the plan never depends on the physical board order.
+In the execution phase, the coordinator issues one \emph{task} message per worker for each plan entry and receives one \emph{result} message in return.
+The remaining two types handle exceptions and shutdown. A worker raises a typed \emph{error} message when it cannot serve a task, for instance when its reuse cache is stale or an input exceeds its buffer. And the coordinator ends the session with a \emph{shutdown} message.
+% The vocabulary contains five message types, grouped by inference phase in Figure~\ref{fig:coordinator-workflow}.
+% In the initialization phase, a worker announces itself with a \emph{registration message} that reports its clock frequency, and the coordinator responds with an \emph{acknowledge message} containing an assigned worker identifier.
+% The identifier binds the physical device to the logical index the plan refers to, so the plan never depends on which board occupies which port.
+% In the execution phase the coordinator issues one \emph{task message} per worker for each plan entry, and receives one \emph{result message} in return, and this loop repeats until the network is exhausted.
+% The remaining types handle exceptions and teardown.
+% A worker raises a typed \emph{error message} when it cannot serve a task, for instance when its reuse cache is stale or an input exceeds its buffer, and the coordinator ends the session with a shutdown message.
+
+\paragraph{Framing.}
+Every message shares the same frame.
+A sixteen-byte header carries a magic number, the message type, the worker identifier, and the length of the payload that follows.
+The magic number lets a receiver validate and resynchronise the stream, and the length field lets it read exactly one message before interpreting the next---all the framing a TCP byte stream requires.
+For a task, the bulk tensor data follows the descriptor within the same round.
+The descriptor states how many payload bytes arrive, and the reuse flags state how to interpret them: either as a full input patch, or as the top and bottom boundary rows that complement a cached slice.
+Descriptor and data therefore reach the worker together, so each plan step costs exactly one round trip per worker, without separate control and data channels.
+
+\paragraph{Task descriptor.}
+
+\begin{table}[t]
+\centering
+\caption{Field groups of the task descriptor. Each descriptor materialises one plan entry and is self-contained.}
+\label{tab:sd-task}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{l p{8.2cm}}
+\hline
+\textbf{Group} & \textbf{Content} \\
+\hline
+\\
+Kernel Information & Input and output dimensions, kernel, stride, padding, groups,
+per-worker depthwise padding 
+\vspace{2mm} \\
+\hline
+\\
+Block-wise execution & Layer type, first and last layer index \vspace{2mm}\\
+\hline
+\\
+Cross-block reuse & Cache rebuild flag, boundary row counts, cached row range,
+expected producer block, return-boundary flag \vspace{2mm} \\
+\hline
+\end{tabular}
+\end{table}
+
+
+The task descriptor is the materialisation of one plan entry, and its fields fall into the three groups of Table~\ref{tab:sd-task}.
+\begin{itemize}
+    \item \emph{Kernel information} group carries the input and output dimensions, and the size of convolution parameters that enable the naive inference in the system;
+    \item \emph{Block-wise execution} group names the layer type together with the first and last layer indices, so the same message expresses a single layer when the two indices coincide and a fused block when they span an IRB. Therefore, we can easily extend our optimization in Section~\ref{sec:block-wise-local-execution} for workers;
+    \item \emph{Cross-block reuse} group carries the boundary geometry of Section~\ref{sec:cross-block-data-reuse}, informing workers whether to rebuild the input from the local cache, how many boundary rows are attached, which cached rows to use, which block must have produced the cache, and whether to return boundary rows only.
+\end{itemize}
+
+
+
+
+Four properties of this descriptor carry the design.
+It is \emph{self-contained}: a worker needs nothing beyond the descriptor, its payload, and its Flash-resident weights to execute a step.
+It is \emph{uniform}: every optimisation field defaults to zero, so a plain layer-wise task simply leaves them unset, and the baseline and every combination of the two mechanisms run over the identical protocol---later comparisons between execution modes therefore carry no protocol differences.
+It is \emph{self-checking}: the expected producer index acts as a freshness token for the worker's cache; a worker whose cache does not match the token reports an error instead of computing on stale rows, and the coordinator falls back to a full transfer, realising the invalidation rule of Section~\ref{sec:cross-conditions} at runtime.
+And it is \emph{cheap}: the descriptor spans tens of bytes against tensor payloads of kilobytes.
+
+
+\paragraph{Result message.}
+The result message closes each round.
+It reports the worker's on-device timing and the size of the output that follows, and the output itself is either the worker's full output slice or only its boundary rows, as the return flag of the task requested.
+Carrying the timing inside the protocol separates the time a worker spent computing from the time its bytes spent on the wire, which lets the coordinator attribute per-step latency to computation or communication and underpins the measurements reported later in this thesis.
+The byte-level encoding of these messages, and the discipline that keeps the coordinator-side and worker-side definitions in lockstep, are implementation concerns and are described in the implementation chapter.
+
+
+
+
+
 % \textcolor{red}{Still need tables for message structure.}
 % The coordinator and workers communicate over a custom, lightweight protocol built on top of TCP/IP. \textcolor{red}{As illustrated in Table~\ref{tab:tbd}, every message begins with a fixed-byte header that indicates the message type and payload length, followed by the typed payload.} Figure~\ref{fig:coordinator-workflow} shows the basic message flow: (i) a worker registers and reports its status; (ii) the coordinator acknowledges with an assigned identifier; (iii) the coordinator then issues \textsc{TASK} messages and receives \textsc{RESULT} messages until the inference is complete.
 
 % Table~\ref{tab:tbd} summarizes the information carried in \textsc{TASK} message to support a worker in executing a layer or block. \textcolor{red}{the layer or block index range, the input and output dimensions, the convolution parameters, the per-worker depthwise height padding $p^i_{\mathrm{top}}, p^i_{\mathrm{bot}}$ from (\ref{eq:sd-inpad}), and the cross-block reuse fields---whether to reconstruct the input from the local cache, how many boundary rows are sent, which cached rows to use, and whether to return only boundary rows. The \textsc{Result} message returns the compute timing and the output size, followed by the output bytes. The concrete byte-level encoding and the matching layouts on the Python and C++ sides are deferred to the implementation chapter.}
 
-To support the coordinator-worker architecture, we design a custom, lightweight protocol on top of TCP/IP. Based on the coordinator and worker system design, the protocol needs to obey the following principles: 
-\begin{itemize}
-    \item It must admit the workers dynamically and bind each physical device to the logical worker ID assigned by the coordinator. This allows the coordinator to manage a set of workers dynamically, and to assign tasks accordingly;
-    \item It must carry the task descriptions that allow the workers to execute a layer or block of the CNN model from the descriptor, including the layer or block index range, the input and output dimensions, and the necessary convolution parameters. This allows the workers to execute the assigned tasks without any prior knowledge of the model structure;
-    \item It must frame variable-size payloads reliably over TCP byte stream. This allows the system to transfer messages of arbitrary size;
-    \item It must support our proposed optimizations, including block-wise local execution (Section~\ref{sec:block-wise-local-execution}) and cross-block data reuse (Section~\ref{sec:cross-block-data-reuse}). This allows the system to reduce communication overhead and improve performance.
-\end{itemize}
+% The task descriptor is the materialisation of one task entry, and its fields are demonstrated in Table~\ref{tab:sd-task}.
+% The execution range names the layer type together with the first and last layer indices, so the same message expresses a single layer when the two indices coincide and a fused block when they span an IRB.
+% The geometry group carries the input and output dimensions, the convolution parameters, and the per-worker depthwise padding of (\ref{eq:sd-inpad}).
+% The reuse group carries the boundary geometry of Section~\ref{sec:cross-block}, namely whether to rebuild the input from the local cache, how many boundary rows are attached, which cached rows to use, which block must have produced the cache, and whether to return boundary rows only.
 
-These requirements lead to a small custom binary protocol on top of TCP.
-TCP provides the reliable and ordered delivery that multi-kilobyte tensor transfers need, which a datagram transport such as UDP would fail and have to rebuild by hand.
-A custom binary encoding, rather than a general serialisation format, keeps the parsing cost on the worker near zero.
-Each message is a fixed-layout record that the MCU reads directly into a structure, without any parser code, dynamic allocation, or per-field interpretation.
-The generality of a self-describing format brings little cost, since the descriptor spans only tens of bytes while the payloads frames span hundreds of times than the header, up to kilobytes.
-TCP also helps in managing the flow of data. The protocol needs no sequence numbers or flow control of its own, allieviating the burden on the system.
-Each worker holds at most one computation task, and the plan already fixes a total order over the steps, so a stop-and-wait rhythm of one task and one result per round is all the coordination the system requires.
-
-
-
-
-
-
-
-
-
-
-
-
+% Four properties of this descriptor carry the design.
+% It is self-contained, since a worker needs nothing beyond the descriptor, its payload, and its Flash-resident weights to execute a step.
+% It is uniform, since every optimisation field defaults to zero and a plain layer-wise task simply leaves them unset, so the baseline and every combination of the two mechanisms run over the identical protocol and later comparisons between execution modes carry no protocol differences.
+% It is self-checking, since the expected producer index acts as a freshness token for the worker's cache.
+% A worker whose cache does not match this token reports an error instead of computing on stale rows, and the coordinator falls back to a full transfer, which realises the invalidation rule of Section~\ref{sec:cross-block-conditions} at run time.
+% And it is cheap, since the descriptor spans tens of bytes against tensor payloads of kilobytes.
 
 
  
@@ -449,10 +571,12 @@ The coordinator now holds only boundaries and acts as a lightweight scheduler ra
 
 \begin{table}
     \centering
-    \begin{tabular}{|>{\centering\arraybackslash}m{3.5cm}|m{7.0cm}|}
+    \caption{Conditions to enable cross-block data reuse.}
+    \begin{tabular}{>{\centering\arraybackslash}m{3.5cm} m{7.0cm}}
         \hline
-        \textbf{Reuse direction} & \multicolumn{1}{c|}{\textbf{Enabling condition}} \\
-        \hline \hline
+        \textbf{Reuse direction} & \multicolumn{1}{c}{\textbf{Enabling condition}} \\
+        % \hline \hline
+        \hline
         Coordinator $\rightarrow$ worker & Previous block has no residual connection. \\
         \hline
         Worker $\rightarrow$ coordinator &
@@ -463,7 +587,7 @@ The coordinator now holds only boundaries and acts as a lightweight scheduler ra
             \end{itemize} \\
         \hline
     \end{tabular}
-\caption{Conditions to enable cross-block data reuse.}
+
 \label{tab:reuse-conditions}
 \end{table}
 
