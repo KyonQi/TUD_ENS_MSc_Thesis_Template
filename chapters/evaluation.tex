@@ -215,11 +215,50 @@ Another interesting observation is that although the end-to-end inference latenc
   \label{fig:results-memory}
 \end{figure}
 
+\begin{figure}[t]
+    \centering
+        % MobileNetV2-0.35
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/memory_worker_mobilenetv2_035.pdf}
+        % \vspace{-2mm}
+        \caption{MobileNetV2-0.35}
+        \label{fig:memory-mbv2-worker}
+      \end{subfigure}
+      \hspace{1mm}
+        % MCUNet
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/memory_worker_mcunet.pdf}
+        % \vspace{-2mm}
+        \caption{MCUNet}
+        \label{fig:memory-mcunet-worker}
+      \end{subfigure}
+      \\ \vspace{1mm}
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/memory_worker_mnasnet_05.pdf}
+        % \vspace{-2mm}
+        \caption{MnasNet-0.5}
+        \label{fig:memory-mnasnet-worker}
+      \end{subfigure}
+      \hspace{1mm}
+        % ProxylessNAS-Mobile
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/memory_worker_proxylessnas_mobile.pdf}
+        % \vspace{-2mm}
+        \caption{ProxylessNAS-Mobile}
+        \label{fig:memory-proxylessnas-worker}
+      \end{subfigure}
+      % \hfill
+  \caption{The peak memory usage at the workers (collaborative inference on 4 MCUs).}
+  \label{fig:results-memory-worker}
+\end{figure}
 
 
 
-
-Figure~\ref{fig:tbd} shows the coordinator peak memory per IRB on four workers. In the baseline, the coordinator must materialize and buffer each intermediate feature map at runtime, so its peak is determined by the largest feature map of the model, which usually occurs in the early high-resolution blocks. \emph{Ours} keeps these intermediates on the workers and returns only boundary rows, reducing the memory footprint of the coordinator significantly. 
+Figure~\ref{fig:tbd} shows the worker peak memory per IRB on four workers. In the baseline, the workers must materialize and buffer each intermediate feature map at runtime, so their peaks are determined by the largest feature maps of the model, which usually occur in the early high-resolution blocks. \emph{Ours} keeps these intermediates on the workers and returns only boundary rows, reducing the memory footprint of the workers significantly. 
 
 The coordinator peak memory falls from 735 KB to 158 KB on MobileNetV2-0.35, from 412 KB to 112 KB on MCUNet, from 392 KB to 158 KB on MnasNet-0.5, and from 784 KB to 294 KB on ProxylessNAS, achieving a reduction between 60\% and 80\%. Therefore, \emph{Ours} alliviates the coordinator-side memory bottleneck that a single MCU cannot handle.
 
