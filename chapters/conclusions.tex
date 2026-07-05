@@ -1,54 +1,47 @@
 \chapter{Conclusions and Future Work}
 \label{chp:conclusions}
 
-Conculsions.
-
-This thesis set out to make collaborative CNN inference practical and efficient on clusters of networked MCUs.
-This final chapter summarises what was designed, built, and measured, and outlines the directions this work opens.
-
 \section{Conclusions}
 \label{sec:conclusions}
 
-TinyML promises on-device intelligence, but the peak activation footprint of modern CNNs can exceed the SRAM of a single MCU, precisely because of the inverted residual blocks these models are built from.
-Distributing one model across several networked MCUs pools their memory, yet existing distributed runtimes communicate at layer or sub-layer boundaries.
-As Chapter~\ref{chp:related-work} showed, this turns the expanded activation inside each IRB into a network-level object and creates a dual bottleneck.
-The inter-device links carry traffic dominated by tensors that were never meant to leave a device, and the coordinator must buffer intermediate activations that are larger than any single MCU can hold.
+TinyML brings a new paradigm for on-device intelligence, but the memory footprint of modern efficient CNNs can easily exceed the constrained memory of a single MCU, especially for models built with Inverted Residual Blocks (IRBs). 
+Although distributing one model across several networked MCUs aggregates their memory, existing distributed runtimes communicate at layer or sub-layer boundaries.
+This turns the expanded activation inside each IRB into a network-level object and creates a severe communication bottleneck.
+During the inference, the network spends time on transmitting tensors that were never meant to leave a local device, and the coordinator must buffer intermediate activations that are larger than any single MCU can hold.
 
-To answer the research question posed in Chapter~\ref{chp:introduction}, this thesis presented a deployment framework that connects offline model preparation with online distributed execution.
-The offline preprocessing stage quantises a standard CNN to INT8 and compiles it into a communication-aware execution plan together with per-worker manifests, encoding the spatial partitions, weight placement, quantisation metadata, block grouping, residual dependencies, and boundary reuse conditions that a single-device model file does not carry.
-This pipeline resolves the first challenge, turning distributed TinyML deployment from model-specific manual work into an automated and reproducible process.
-The online stage executes the plan on a coordinator-worker cluster over a lightweight binary protocol, and the workers simply follow the plan without making any global decision at run time.
+To transform a standard CNN into a communication-efficient distributed execution across a cluster of networked MCUs, this thesis presents a inference framework that connects offline model preparation with online distributed execution.
+The offline preprocessing stage quantizes a standard CNN to INT8 and compiles it into a communication-aware execution plan together with per-worker manifests, encoding the spatial partitions, weight placement, quantization metadata, block grouping, residual dependencies, and boundary reuse conditions that a single-device model file does not carry.
+This pipeline resolves the first challenge in Section~\ref{sec:intro:problem-statement}, turning distributed TinyML deployment from model-specific manual work into an automated and reproducible process.
+The online stage executes the plan on a coordinator-worker cluster over a lightweight binary protocol, and the workers simply follow the plan without making any global decision at runtime during inference.
 
 The second challenge, making the distributed execution communication- and memory-efficient, is addressed by the two jointly designed mechanisms of Chapter~\ref{chp:system_design}.
-Block-wise local execution moves the communication boundary from the layer to the inverted residual block, so each expanded activation is materialised and consumed inside a worker and never travels through the network.
-Cross-block data reuse lets workers retain the rows they produced for one block and exchange only the thin boundary regions the next block requires, guarded by correctness conditions that are analysed offline and enforced through the task metadata.
-An overlap-ratio cost model completes the design by characterising when the redundant computation of fusion outweighs its communication saving, which enables an adaptive per-block choice of execution mode.
+Block-wise local execution moves the communication boundary from the layer boundary to the inverted residual block boundary, so each expanded activation is materialised and consumed inside a worker and never travels through the network.
+Cross-block data reuse lets workers retain the rows they produced for one block and exchange only the thin boundary regions the next block requires, guarded by correctness conditions that are analyzed offline and enforced through the task metadata.
+An overlap-ratio cost model completes the design by characterizing when the redundant computation of fusion outweighs its communication saving, which enables an adaptive per-block choice of execution mode.
 
 Chapters~\ref{chp:implementation} and~\ref{chp:evaluation} carried the design onto real hardware and quantified it.
-The distributed output is bit-identical to the single-device quantised model, so none of the efficiency gains cost accuracy.
+The distributed output is bit-identical to the single-device quantized model, so none of the efficiency gains cost accuracy.
 On a cluster of Teensy 4.1 workers behind a gigabit switch, across MobileNetV2, MCUNet, MnasNet, and ProxylessNAS, the framework reduces end-to-end inference latency by 30\% to 47\% at four workers, cuts early-block communication by 82\% to 89\%, and lowers the coordinator peak memory by 60\% to 80\%, from 735~KB to 158~KB on MobileNetV2-0.35.
 The ablation study confirmed that the two mechanisms are complementary.
 Block-wise local execution removes the transfer of expanded activations from the critical path, cross-block data reuse eliminates the remaining boundary redundancy, and only their combination drives both the communication and the coordinator memory to their floor.
 
 Returning to the research question, a standard TinyML CNN can indeed be transformed, automatically and without accuracy loss, into a communication-efficient distributed execution across a group of networked MCUs.
 The key is to align the communication boundaries with the block structure of the model rather than with its layers, and to accept a small and bounded amount of local recomputation in exchange for keeping large temporary activations off the network.
-The result is a practical execution platform that lets a group of commodity MCUs host models that none of them could run alone.
+Our system is a practical execution platform that lets a group of commodity MCUs host models that none of them could run alone.
 
 \section{Future Work}
 \label{sec:future-work}
 
-The framework also opens several directions for future work.
-
 \paragraph{Adaptive execution under varying link conditions.}
 The overlap-ratio model exposes a per-block choice between layer-wise and block-wise execution, controlled by a threshold that reflects the relative cost of computation and communication.
 Our evaluation fixed this threshold on a wired gigabit testbed.
-Wireless and bandwidth-constrained deployments shift the trade-off further towards fusion, and they would also revive the compression coders that are implemented in the system but disabled on the gigabit link.
+Wireless and bandwidth-constrained deployments shift the trade-off further towards fusion.
 A systematic study could measure the link bandwidth and the worker compute rate at start-up and tune the threshold, or the entire plan, to the deployment automatically.
 
 \paragraph{Extending reuse across residual connections.}
 Cross-block data reuse is currently invalidated by every residual addition, because the addition is performed at the coordinator and leaves the worker caches stale.
 Moving the residual addition to the workers, with the residual slice cached locally alongside the block output, would keep the caches fresh across residual blocks and raise the reuse coverage of deeper networks substantially.
-The main open question is numerical, since the worker-side addition must reproduce the coordinator's requantisation bit for bit.
+The main open question is numerical, since the worker-side addition must reproduce the coordinator's requantization bit for bit.
 
 \paragraph{Fault tolerance and heterogeneous clusters.}
 The runtime currently assumes a fixed set of identical and reliable workers.
@@ -56,15 +49,21 @@ A failed or stalled worker blocks the execution round, and the heartbeat message
 Future work could detect failures through that channel, re-plan the partition when the membership changes, and exploit the clock frequency that every worker already reports at registration to weight the row partition on heterogeneous clusters.
 
 \paragraph{Pipelining for streaming workloads.}
-The runtime processes one input at a time and synchronises all workers at every block boundary.
+The runtime processes one input at a time and synchronizes all workers at every block boundary.
 Sensing workloads, however, produce continuous streams.
 Pipelining consecutive inputs through the blocks would let the communication of one frame overlap with the computation of the next, raising throughput without changing the per-inference execution path.
 
 \paragraph{Beyond inverted residual blocks.}
 The strategy mapper isolates all architecture-specific knowledge, so supporting a new block pattern requires only one new grouping strategy.
-Applying the framework to other structures, such as the attention blocks of compact transformer models, would test how far block-wise local execution generalises.
+Applying the framework to other structures, such as the attention blocks of compact transformer models, would test how far block-wise local execution generalizes.
 In the opposite direction, the correctness conditions show that an architecture's residual chains cap the achievable reuse coverage, which suggests co-designing future TinyML models to be distribution-friendly from the start.
 
-\paragraph{Energy characterisation.}
-Finally, latency and memory tell only part of the deployment story.
-Measuring per-inference energy across cluster sizes, and comparing a cluster of small MCUs against a single more capable device at equal accuracy, would complete the practical case for collaborative TinyML inference.
+% \paragraph{Energy characterization.}
+% Finally, latency and memory tell only part of the deployment story.
+% Measuring per-inference energy across cluster sizes, and comparing a cluster of small MCUs against a single more capable device at equal accuracy, would complete the practical case for collaborative TinyML inference.
+
+\paragraph{Serving multiple models concurrently.}
+The framework currently provisions one model per deployment, as each worker's
+Flash holds the weights of a single network and the coordinator executes a single plan.
+Making the runtime agnostic to the model would let one cluster serve several models at once.
+It is feasible since the Flash of a worker can store more than one set of compact INT8 weights and the task descriptor only needs a model identifier to select among them, so the coordinator could load one plan per model and interleave their execution rounds.

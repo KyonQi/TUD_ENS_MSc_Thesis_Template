@@ -572,7 +572,7 @@ The coordinator now holds only boundaries and acts as a lightweight scheduler ra
 \begin{table}
     \centering
     \caption{Conditions to enable cross-block data reuse.}
-    \begin{tabular}{>{\centering\arraybackslash}m{3.5cm} m{7.0cm}}
+    \begin{tabular}{m{3.5cm} m{7.0cm}}
         \hline
         \textbf{Reuse direction} & \multicolumn{1}{c}{\textbf{Enabling condition}} \\
         % \hline \hline
@@ -581,9 +581,9 @@ The coordinator now holds only boundaries and acts as a lightweight scheduler ra
         \hline
         Worker $\rightarrow$ coordinator &
             \begin{itemize}[leftmargin=*, topsep=0pt, itemsep=1pt, nosep]
-                \item the current block has no residual connection;
-                \item the next block neither caches nor consumes a residual;
-                \item the next block is spatial rather than fully connected.
+                \item Current block has no residual connection;
+                \item Next block neither caches nor consumes a residual;
+                \item Next block is spatial rather than fully connected.
             \end{itemize} \\
         \hline
     \end{tabular}

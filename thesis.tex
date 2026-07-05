@@ -94,7 +94,15 @@ prof. Jie Yang & Delft University of Technology \\
 % prof.\,dr.\,Koen Langendoen (chairman) & Delft University of Technology \\ 
 % dr.\,Przemys{\l}aw Pawe{\l}czak & Delft University of Technology \\ 
 
-\newcommand{\reportAbstract}{WRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HEREWRITE YOUR ABSTRACT HERE}
+\newcommand{\reportAbstract}{
+The Tiny Machine Learning (TinyML) brings deep learning to microcontrollers (MCUs), but the few hundred kilobytes of SRAM available on these devices make deployment difficult. While model weights can reside in Flash, the intermediate activations generated at inference must fit in SRAM. For the efficient convolutional neural networks (CNNs) that dominate TinyML, such as MobileNetV2, MCUNet, MnasNet, and ProxylessNAS, it is the peak activation footprint rather than the model size that limits deployment. Because these networks are built from Inverted Residual Blocks (IRBs), whose expand–depthwise–project structure produces a large temporary activation inside each block that can exceed the SRAM of a single MCU.
+Distributing CNNs across several networked MCUs can aggregate their memory, but existing distributed runtimes communicate at layer or sub-layer boundaries. This turns the expanded activation inside each IRB into a network-level object that must traverse the network twice and be buffered in full at the coordinating device, creating a both communication and memory bottleneck.
+
+This thesis presents a framework that transforms a standard CNN into a communication-efficient distributed execution across a cluster of networked MCUs. An offline stage quantizes the model to INT8 and compiles it into a communication-aware execution plan and per-worker manifests. An online stage executes the plan on a coordinator–worker cluster. There are two novel mechanisms in the system: \emph{block-wise local execution}, which keeps each expanded activation inside a worker, and \emph{cross-block data reuse}, which exchanges only the thin boundary rows between consecutive blocks. 
+% An overlap-ratio cost model is proposed to characterize when block-wise execution stops paying off and enables an adaptive per-block choice.
+
+We implement the framework on a network of six MCUs and evaluate it on four representative IRB-based CNNs. Compared with naive layer-wise execution, our framework reduces early-block communication overhead by over 80\%, latency by up to 47\%, and coordinator peak SRAM from 735 KB to 158 KB.
+}
 
 \newcommand{\reportKeywords}{TinyML, Split Inference, Edge Computing}
 
