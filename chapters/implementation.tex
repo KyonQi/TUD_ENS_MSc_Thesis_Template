@@ -178,15 +178,19 @@ The simulation system takes the identical model manifests and input data as the 
 
 \section{Miscellaneous}
 \label{sec:implementation-miscellaneous}
+\paragraph{TCP transport settings.}
 To optimize the network performance, we employ two transport settings that significantly influence the latency of the TCP socket. The first is the Nagle's algorithm, which is a TCP optimization that reduces the number of small packets sent over the network by combining them into larger packets. However, this can introduce additional latency in our system, as it may delay the transmission of small messages. Therefore, we disable Nagle's algorithm in the coordinator to ensure that each message is sent immediately without waiting for additional data to be combined.
 
 The second setting is quick acknowledgment option in workers.
 It enables the transport layer to send an immediate ACK rather than a delayed one during the network transmission.
 Because it is cleared automatically after every packet, we manually enable it every time a worker receives a message from the coordinator. It prevents the system from stalling a large amount of time waiting for the acknowledgment of the previous packet, significantly reducing the overall latency of the system.
 
+\paragraph{Firmware build environments.}
 The whole MCU firmware is built with PlatformIO~\cite{here} with separate environments for development, on-device unit testing, and deployment. The development environment enables debugging and logging, while the on-device unit testing environment runs a suite of tests to validate the correctness of the convolution and linear kernels. The deployment environment allows for the automated script to flash the firmware onto the Teensy 4.1 boards. 
 
-In the profiling, to report the true footprint, the worker measures its own memory rather than relying on static estimates. The free DTCM available to the stack is the gap between the current stack pointer and the linker symbol at the end of the static data,
+
+\paragraph{On-device memory measurement.}
+In the profiling stage, to report the true footprint, the worker measures its own memory rather than relying on static estimates. The free DTCM available to the stack is the gap between the current stack pointer and the linker symbol at the end of the static data,
 
 \begin{equation}
 F_{\mathrm{RAM1}} = \mathrm{SP} - E_{\mathrm{bss}}.

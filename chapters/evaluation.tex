@@ -61,6 +61,57 @@ We evaluate from three aspects: communication overhead, end-to-end inference lat
 
 \section{Communication Overhead}
 \label{sec:eval-comm-overhead}
+
+
+\begin{figure}[t]
+    \centering
+        % MobileNetV2-0.35
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/comm/comm_mobilenetv2_035.pdf}
+        % \vspace{-2mm}
+        \caption{MobileNetV2-0.35}
+        \label{fig:comm-mbv2}
+      \end{subfigure}
+      \hspace{1mm}
+        % MCUNet
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/comm/comm_mcunet.pdf}
+        % \vspace{-2mm}
+        \caption{MCUNet}
+        \label{fig:comm-mcunet}
+      \end{subfigure}
+      \\ \vspace{1mm}
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/comm/comm_mnasnet_05.pdf}
+        % \vspace{-2mm}
+        \caption{MnasNet-0.5}
+        \label{fig:comm-mnasnet}
+      \end{subfigure}
+      \hspace{1mm}
+        % ProxylessNAS-Mobile
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/comm/comm_proxylessnas_mobile.pdf}
+        % \vspace{-2mm}
+        \caption{ProxylessNAS-Mobile}
+        \label{fig:comm-proxylessnas}
+      \end{subfigure}
+      % \hfill
+  \caption{Communication overhead (collaborative inference on 4 MCUs).}
+  \label{fig:results-comm}
+\end{figure}
+
+
+
+
+
+
+
+
+
 We first break down inference to isolate the communication cost. Figure~\ref{fig:tbd} reports the communication latency of the initial convolution and the first four inverted residual blocks on four workers for each model. These early layers operate on the largeset feature maps and therefore expose the communication cost most clearly.
 
 The communication overhead dominates these layers in the baseline system. The communication latency of the first IRB reaches about 39 ms on MobileNetV2-0.35, 74 ms on MnasNet-0.5, 79 ms on MCUNet-in4, and 156 ms on ProxylessNAS. Since the output of each layer needs to be sent to the coordinator and then re-scattered to the workers, the network transfer of intermediate activations becomes a significant bottleneck. 
@@ -69,12 +120,105 @@ The communication overhead dominates these layers in the baseline system. The co
 
 \section{End-to-end Inference Latency}
 \label{sec:eval-end2end-infer-latency}
+
+\begin{figure}[t]
+    \centering
+        % MobileNetV2-0.35
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/latency/latency_mobilenetv2_035.pdf}
+        % \vspace{-2mm}
+        \caption{MobileNetV2-0.35}
+        \label{fig:latency-mbv2}
+      \end{subfigure}
+      \hspace{1mm}
+        % MCUNet
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/latency/latency_mcunet.pdf}
+        % \vspace{-2mm}
+        \caption{MCUNet}
+        \label{fig:latency-mcunet}
+      \end{subfigure}
+      \\ \vspace{1mm}
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/latency/latency_mnasnet_05.pdf}
+        % \vspace{-2mm}
+        \caption{MnasNet-0.5}
+        \label{fig:latency-mnasnet}
+      \end{subfigure}
+      \hspace{1mm}
+        % ProxylessNAS-Mobile
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/latency/latency_proxylessnas_mobile.pdf}
+        % \vspace{-2mm}
+        \caption{ProxylessNAS-Mobile}
+        \label{fig:latency-proxylessnas}
+      \end{subfigure}
+      % \hfill
+  \caption{End-to-end latency of collaborative inference across different numbers of MCUs.}
+  \label{fig:results-latency}
+\end{figure}
+
+
+
+
+
+
 Figure~\ref{fig:tbd} shows the end-to-end inference latency as the number of workers increases across different models. At four workers, \emph{ours} consistently outperforms the baseline. It reduces the latency of MobileNetV2-0.35 from 459 ms to 321 ms, MnasNet-0.5 from 920 ms to 486 ms, MCUNet-in4 from 938 ms to 552 ms, and ProxylessNAS from 1862 ms to 1174 ms, achieving a reduction between 30\% and 47\%. The saving is largest on the models that move the most intermediate data. These benefits come from eliminating communication with two mechanisms discussed above.
 
 Another interesting observation is that although the end-to-end inference latency falls as workers are added, it yields diminishing returns. Based on Amdahl's law, there is a growing fraction of time that does not support parallelization, such as the fixed per-round communication overhead and the coordinator's aggregation of results. Hence, the curves flatten as the number of workers increases, and the benefit of a fifth or sixth worker is modest compared with the number from two to four. 
 
 \section{Peak Memory}
 \label{sec:eval-peak-memory}
+
+\begin{figure}[t]
+    \centering
+        % MobileNetV2-0.35
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/memory_coord_mobilenetv2_035.pdf}
+        % \vspace{-2mm}
+        \caption{MobileNetV2-0.35}
+        \label{fig:memory-mbv2}
+      \end{subfigure}
+      \hspace{1mm}
+        % MCUNet
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/memory_coord_mcunet.pdf}
+        % \vspace{-2mm}
+        \caption{MCUNet}
+        \label{fig:memory-mcunet}
+      \end{subfigure}
+      \\ \vspace{1mm}
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/memory_coord_mnasnet_05.pdf}
+        % \vspace{-2mm}
+        \caption{MnasNet-0.5}
+        \label{fig:memory-mnasnet}
+      \end{subfigure}
+      \hspace{1mm}
+        % ProxylessNAS-Mobile
+      \begin{subfigure}{0.48\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/memory_coord_proxylessnas_mobile.pdf}
+        % \vspace{-2mm}
+        \caption{ProxylessNAS-Mobile}
+        \label{fig:memory-proxylessnas}
+      \end{subfigure}
+      % \hfill
+  \caption{The peak memory usage at the coordinator (collaborative inference on 4 MCUs).}
+  \label{fig:results-memory}
+\end{figure}
+
+
+
+
+
 Figure~\ref{fig:tbd} shows the coordinator peak memory per IRB on four workers. In the baseline, the coordinator must materialize and buffer each intermediate feature map at runtime, so its peak is determined by the largest feature map of the model, which usually occurs in the early high-resolution blocks. \emph{Ours} keeps these intermediates on the workers and returns only boundary rows, reducing the memory footprint of the coordinator significantly. 
 
 The coordinator peak memory falls from 735 KB to 158 KB on MobileNetV2-0.35, from 412 KB to 112 KB on MCUNet, from 392 KB to 158 KB on MnasNet-0.5, and from 784 KB to 294 KB on ProxylessNAS, achieving a reduction between 60\% and 80\%. Therefore, \emph{Ours} alliviates the coordinator-side memory bottleneck that a single MCU cannot handle.
