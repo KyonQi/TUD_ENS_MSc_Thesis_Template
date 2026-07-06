@@ -17,45 +17,35 @@ Finally, Section~\ref{sec:bg-summary} summarises the gap the thesis addresses.
 \end{figure}
 
 
-Many efficient CNNs used in TinyML rely on IRBs~\cite{sandler2018mobilenetv2,lin2020mcunet,tan2019mnasnet,cai2019proxylessnas}. 
+Many efficient CNNs used in TinyML rely on IRBs~\cite{mobilenetv2,mobilenetv3,efficientnet,mcunet,micronets,proxylessnas}. 
 An IRB follows an expand--depthwise--project structure: it first expands the channel dimension, processes the expanded representation with depthwise convolution, and then projects the feature map back to a compact output. 
 This design is compute-efficient, but it creates a large temporary activation inside the block. 
 
-As shown in Figure~\ref{fig:latency-breakdown}, the expanded activation exposes a significant communication bottleneck in distributed inference: communication becomes comparable to or larger than local computation after the expansion layer; in the depthwise stage, communication latency already exceeds computation latency. 
+As shown in Figure~\ref{fig:latency-breakdown}, this expanded activation exposes a significant communication bottleneck in distributed inference: communication becomes comparable to or larger than local computation after the expansion layer; in the depthwise stage, communication latency already exceeds computation latency. 
 It also stresses memory of MCUs: the MCU must receive, buffer, and re-dispatch the expanded intermediate activation at runtime, and residual connections may require it to keep the block input as well.
 
 \section{Single-Device TinyML Inference}
 \label{sec:bg-single-tinyml}
-TinyML brings deep learning to edge devices such as MCUs [\textcolor{red}{refs}]. %~\cite{warden2019tinyml,david2021tflite}.
+TinyML brings deep learning to edge devices such as MCUs~\cite{tinyml,tesorflowlite,tinyml-review}.
 A rich toolbox has made single-device deployment increasingly practical.
-Many research focuses on reducing the model size and memory footprint, including quantisation, pruning, compression, and neural architecture search [\textcolor{red}{refs}].
-Integer quantization maps weights and activations to 8-bit fixed-point values with little accuracy loss~\cite{jacob2018quantization}, and pruning and compression shrink the model itself [\textcolor{red}{refs}]. %~\cite{han2015deepcompression}.
-Neural architecture search produces models tailored to tight resource budgets, including MnasNet ~\cite{tan2019mnasnet}, ProxylessNAS~\cite{cai2019proxylessnas}, and MCUNet, which co-designs the architecture with its inference engine~\cite{lin2020mcunet} [\textcolor{red}{refs}]..
+Many studies focus on reducing model size and memory footprint through several complementary techniques.
+Integer quantization maps weights and activations to 8-bit fixed-point values with little accuracy loss~\cite{quantize-memory}, while pruning and compression shrink the model itself~\cite{quantize-deepcompress}. 
+Neural architecture search further produces models tailored to tight resource budgets, such as MnasNet, ProxylessNAS, and MCUNet, which co-designs the architecture with its inference engine~\cite{mnasnet,proxylessnas,mcunet}.
+
+Besides the reduction in model size, existing TinyML systems also optimize the peak activation footprint at runtime through compression, memory-aware scheduling, and patch-based inference or model redesign~\cite{memory-compression,operator-reordering,mcunetv2,micronets}.
+Memory-aware scheduling reorders operators to shrink co-resident tensors, and patch-based inference splits the input spatially and processes one patch at a time~\cite{mcunetv2,operator-reordering}.
+However, patch-based execution, introduces overlapping receptive fields across consecutive layers, leading to a repeated computation and higher latency.
+Model redesign can avoid the peak altogether, but they require retraining and weaken the direct reuse of standard pretrained models.
 
 % These efficient CNNs share a common building block, the Inverted Residual Block (IRB) introduced by MobileNetV2~\cite{sandler2018mobilenetv2}, which expands the channel dimension, applies a depthwise convolution, and projects back to a compact output.
 
 % The IRB is compute-efficient but memory-hostile.
 % Its expanded intermediate is the largest tensor in the network, it exists only temporarily inside the block, and in early high-resolution layers it alone can exceed the SRAM of an MCU.
-Besides the reduction in model size, existing TinyML systems also optimise the peak activation footprint at runtime through compression, memory-aware scheduling, and patch-based inference or model redesign [\textcolor{red}{refs}].
-Memory-aware scheduling reorders operators to shrink co-resident tensors, and patch-based inference splits the input spatially and processes one patch at a time~\cite{lin2021mcunetv2} [\textcolor{red}{refs}]..
-However, patch-based execution, introduces overlapping receptive fields across consecutive layers, leading to a repeated computation and higher latency.
-Model redesign can avoid the peak altogether, but they require retraining and weaken the direct reuse of standard pretrained models.
 
-% These techniques all operate within the budget of one device.
-% When the peak activation footprint still exceeds that budget, they force a choice between accuracy, latency, and hardware cost.
-% This thesis takes the orthogonal route of pooling the memory of several networked MCUs, while preserving the original model and its accuracy.
+
 
 \section{Split Inference between Device and Cloud}
 \label{sec:bg-split}
-
-
-% \begin{figure}[t]
-%     \center
-%     \includegraphics[width=\linewidth]{figs/final.pdf}
-%     \caption{Latency breakdown of the first IRB of MobileNetV2 under layer-wise execution on four MCUs. After channel expansion, communication becomes comparable to or larger than local computation, showing that expanded activations dominate distributed execution.}
-%     % \vspace{-4mm}
-%     \label{fig:latency-breakdown}
-% \end{figure}
 
 \begin{figure}[t]
     \centering
@@ -88,30 +78,81 @@ Model redesign can avoid the peak altogether, but they require retraining and we
     \label{fig:related-work}
 \end{figure}
 
-A first way to avoid the single-device budget is to split the model between the edge device and a more powerful cloud server as shown in Figure~\ref{fig:related-a}.
-Recent TinyML split computing studies evaluate how quantized models can be divided across the edge and the server, with particular attention to split-point selection. Neurosurgeon selects a layer at which to cut a network between a mobile device and the cloud, trading local computation against transmission cost~\cite{kang2017neurosurgeon}.
-% , wireless protocol choices, and end-to-end latency~\cite{bove2024smartsplit,bove2024performance}, and to reducing the latency of split execution in TinyML IoT systems~\cite{jenhani2025optimizing}.
+A first way to overcome the single-device budget is to split the model between the edge device and a more powerful cloud server as shown in Figure~\ref{fig:related-a}.
+Recent split computing studies in TinyML evaluate how quantized models can be divided across the edge and the server, with particular attention to split-point selection. Neurosurgeon selects a layer at which to cut a network between a mobile device and the cloud, trading local computation against transmission cost~\cite{split-neurosurgeon}.
+Building on this idea, later work further explores the optimizations on which to split: SmartSplit jointly considers wireless communication protocol choices and end-to-end latency when selecting the cut~\cite{smartsplit}, while other studies focus specifically on reducing the latency of split execution in TinyML IoT deployments~\cite{optimizingsplit}.
 
-These systems focus on optimizing the position of a single cut between two parts, where the edge devices are only responsible for a small fraction of the model.
-The activation at the cut still transfers the network in full size.
-However, \textcolor{red}{need some contents.}
+
+Such systems focus on optimizing the position of a single cut between two parts, leaving the edge device responsible for only a small fraction of the model. Moreover, the activation transmitted at the cut point remains full-size, so communication cost grows directly with the width of the chosen layer, worsening the end-to-end latency under bandwidth-constrained conditions.
+
 % In contrast, this thesis distributes every layer across a group of peer MCUs with no capable tier at all, so the relevant question is not where to cut once, but how to keep the many per-layer exchanges from being dominated by tensors that were never meant to leave a device.
 
 \section{Distributed TinyML Inference}
 \label{sec:bg-distributed}
-A second category distributes inference across a cluster of cooperating edge devices, as illustrated in Figure~\ref{fig:related-b}.
-MoDNN partitions a network across multiple mobile devices with a MapReduce-style execution~\cite{mao2017modnn}, while DeepThings partitions the early convolutional layers into independently computable tiles that are fused across layers and distributed over an edge cluster~\cite{zhao2018deepthings}.
-Collectively, these systems establish that partitioned execution relieves per-device memory pressure and pools computation, and DeepThings in particular shows the value of fusing layers to avoid intermediate exchanges.
-Two assumptions, however, are built into this line of work.
-First, the devices are of single-board-computer (SBC) class, with megabytes to gigabytes of memory and an operating system, so the coordinating device can freely buffer intermediate activations and its memory is never treated as a constraint.
-Second, communication is still organised around layer boundaries or fine-grained sub-layer tasks.
+A second category distributes inference across a cluster of cooperating edge
+devices, as illustrated in Figure~\ref{fig:related-b}. MoDNN partitions a
+network across multiple mobile devices with a MapReduce-style
+execution~\cite{split-modnn}, and its successor MeDNN further refines the
+partition and deployment of large-scale models on such devices~\cite{medNN}.
+DeepThings instead partitions the early convolutional layers into
+independently computable tiles and fuses them across layers before
+distributing them over an edge cluster~\cite{DeepThings}.
+CoEdge extends this direction by adaptively partitioning the workload across
+heterogeneous devices according to their compute and bandwidth
+budgets~\cite{coedge}. Collectively, these systems establish that partitioned
+execution relieves per-device memory pressure and pools computation, and
+DeepThings in particular demonstrates the value of fusing layers to avoid
+intermediate exchanges.
 
-On MCU-level hardware, neither assumption holds, and this gap is even sharpened by the work closest to this thesis: collaborative inference on clusters of MCUs.
-Recent work shows that a CNN infeasible on a single MCU can be executed across multiple networked MCUs by partitioning its parameters and activations at fine granularity~\cite{lu2026splitcnn}, providing concrete mechanisms for partitioning, offloading, and workload allocation.
-However, the efficiency of inference is overlooked in the work.
-Fine-grained partitions exchange data at sub-layer boundaries, which multiplies the number of transfers and, for IRB-based CNNs, exposes the temporarily expanded activation to the network exactly as layer-wise schedules do. As a result, a large fraction of time is spent transmitting the unnecessary data rather than performing the computation tasks.
+However, two assumptions underpin this line of work. First, the devices are of
+single-board-computer (SBC) class, with megabytes to gigabytes of memory and an
+operating system, so the coordinating device can freely buffer intermediate
+activations and its memory is never treated as a constraint. Second,
+communication is still organized around layer boundaries or fine-grained
+sub-layer tasks, as in layer-granularity partitioning
+schemes. On MCU-level hardware, neither assumption
+holds, and this gap widens further when we turn to the work closest to this
+thesis: collaborative inference on clusters of MCUs.
 
-What remains missing is a framework that generates and executes a distribution strategy whose boundaries is considered with the block structure of the model, so that expanded activations stay local and only compact block inputs, projected outputs, and the necessary boundary rows are exchanged.
+Recent work shows that a CNN infeasible on a single MCU can be executed across
+multiple networked MCUs by partitioning its parameters and activations at fine
+granularity~\cite{split-cnn}, providing concrete mechanisms for partitioning,
+offloading, and workload allocation. 
+However, the efficiency of the resulting inference is largely overlooked. Fine-grained partitions exchange data at
+sub-layer boundaries, which multiplies the number of transfers. 
+It also exposes the temporarily expanded activation to the network for IRB-based CNNs. As a result, a large fraction of the runtime is spent transmitting unnecessary data rather than performing computation.
+
+What remains missing is a framework that generates and executes a distribution
+strategy whose boundaries are aligned with the block structure of the model, so
+that expanded activations stay local and only compact block inputs, projected
+outputs, and the necessary boundary rows are exchanged.
+
+
+
+
+
+
+% A second category distributes inference across a cluster of cooperating edge devices, as illustrated in Figure~\ref{fig:related-b}.
+% MoDNN partitions a network across multiple mobile devices with a MapReduce-style execution~\cite{split-modnn}, while DeepThings partitions the early convolutional layers into independently computable tiles that are fused across layers and distributed over an edge cluster~\cite{DeepThings}.
+% Collectively, these systems establish that partitioned execution relieves per-device memory pressure and pools computation, and DeepThings in particular shows the value of fusing layers to avoid intermediate exchanges.
+% However, two assumptions are required in this line of work.
+% First, the devices are of single-board-computer (SBC) class, with megabytes to gigabytes of memory and an operating system, so the coordinating device can freely buffer intermediate activations and its memory is never treated as a constraint.
+% Second, communication is still organized around layer boundaries or fine-grained sub-layer tasks.
+
+% On MCU-level hardware, neither assumption holds, and this gap is even widen further by the work closest to this thesis: collaborative inference on clusters of MCUs.
+% Recent work shows that a CNN infeasible on a single MCU can be executed across multiple networked MCUs by partitioning its parameters and activations at fine granularity~\cite{split-cnn}, providing concrete mechanisms for partitioning, offloading, and workload allocation.
+% However, the efficiency of inference is overlooked in the work.
+% Fine-grained partitions exchange data at sub-layer boundaries, which multiplies the number of transfers and, for IRB-based CNNs, exposes the temporarily expanded activation to the network exactly as layer-wise schedules do. As a result, a large fraction of time is spent transmitting the unnecessary data rather than performing the computation tasks.
+
+% What remains missing is a framework that generates and executes a distribution strategy whose boundaries is considered with the block structure of the model, so that expanded activations stay local and only compact block inputs, projected outputs, and the necessary boundary rows are exchanged.
+
+
+
+
+
+
+
+
 % This thesis provides exactly that framework: it treats the communication boundary as the design object, aligns it with the IRB structure, bounds coordinator memory by construction, and derives the correctness conditions that residual connections impose on cross-block data reuse.
 
 

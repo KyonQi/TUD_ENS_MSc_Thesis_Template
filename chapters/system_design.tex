@@ -16,7 +16,7 @@ In this chapter, we present the design of our framework that transforms a standa
     \label{fig:system-architecture}
 \end{figure}
 
-As discussed in Section~\ref{chp:system_design}, a typical MCU offers only hundreds of KBs of SRAM (e.g., less than 512~KB) during runtime inference. \textcolor{red}{While the model weights can be stored in Flash memory, the intermediate activations must reside in SRAM at runtime. For CNNs built from IRBs, the largest tensor at runtime is the output of the expanding convolution layer: each block first expands the channel dimension by an expansion ratio $e$ (e.g., $e=6$ in MobileNetV2), applies a depthwise convolution, and then reduces the channel dimension back to the original size (refs).} The output of the expanding convolution layer is therefore $e$ times larger than the input, which can easily exceed the SRAM capacity of a single MCU. This results in a significant memory bottleneck that prevents the execution of large CNNs on resource-constrained MCUs. 
+A typical MCU offers only hundreds of KBs of SRAM (e.g., less than 512~KB) during runtime inference. While the model weights can be stored in Flash memory, the intermediate activations must reside in SRAM at runtime. For CNNs built from IRBs, the largest tensor at runtime is the output of the expanding convolution layer: each block first expands the channel dimension by an expansion ratio $e$ (e.g., $e=6$ in MobileNetV2), applies a depthwise convolution, and then reduces the channel dimension back to the original size~\cite{mobilenetv2}. The output of the expanding convolution layer is therefore $e$ times larger than the input, which can easily exceed the SRAM capacity of a single MCU. This results in a significant memory bottleneck that prevents the execution of large CNNs on resource-constrained MCUs. 
 
 To address this, we implement an end-to-end pipeline for distributed inference across multiple networked MCUs, as shown in Figure~\ref{fig:system-architecture}, comprising two stages:
 \begin{itemize}
@@ -41,16 +41,29 @@ The offline preprocessing stage employs a trained model for efficient distribute
 
 
 \subsection{Quantization}
-Quantization is a significant step in the offline preprocessing stage, as it reduces the model size and memory footprint, enabling efficient execution on resource-constrained MCUs. We employ an 8-bit post-training quantization (PTQ (refs)) with an asymmetric scheme: activations are stored as \verb|uint8|, weights as \verb|int8|, and biases as \verb|int32| with a separate scale per output channel for the weights. For a convolutional layer, the integer accumulator and the requantized output are computed as follows:
+Quantization is a key step in the offline preprocessing stage. By mapping floating-point weights and activations to low-bit integers, it reduces both the model size and the memory footprint and, crucially, replaces floating-point arithmetic with integer operations that MCUs can execute far more efficiently.
+This makes quantization a prerequisite for on-device execution.
 
+We employ 8-bit post-training quantization (PTQ)~\cite{quantization-ptq} with an asymmetric scheme. PTQ is chosen over quantization-aware training because it requires no access to the full training pipeline and only a small calibration set, which preserves our goal of reusing standard pretrained models without retraining~\cite{quantization-qat}. 
+Under this scheme, activations are stored as \verb|uint8|, weights as \verb|int8|, and biases as \verb|int32|, with a separate scale per output channel for the weights. 
+The asymmetric encoding lets the \verb|uint8| range fit the non-negative output of ReLU activations tightly, while per-channel weight scales accommodate the differing dynamic ranges across output channels that a single per-tensor scale would otherwise have to average over, at the cost of accuracy. 
+For a convolutional layer, the integer accumulator and the requantized output are computed as follows:
 \begin{align}
     \mathrm{acc} &= \sum(x_q - z_{\mathrm{in}})(w_q-z_w)+b_{\mathrm{int32}}, \label{eq:quantized-acc}\\
     y_q &= \mathrm{clip}(\mathrm{round}(\mathrm{acc} \cdot m + z_{\mathrm{out}}), 0, 255), \label{eq:quantized-y}\\
     m &= \frac{s_{\mathrm{in}}s_w}{s_{\mathrm{out}}}, \label{eq:quantized-multiplier}
 \end{align}
-where $(s,z)$ denotes the scale and zero-point of the input, weight, and output tensors respectively. The multiplier $m$ is precomputed and stored per output channel. The quantization parameters are calibrated on a small number of representative samples. 
+where $(s,z)$ denotes the scale and zero-point of the input, weight, and output tensors, respectively. 
+The multiplier $m$ is precomputed and stored per output channel, so that the runtime requantization in (\ref{eq:quantized-y}) reduces to a fixed-point multiply-and-shift with no floating-point division on the critical path. 
+The quantization parameters are calibrated on a small number of representative samples, which is sufficient to estimate the activation ranges needed for the input and output scales.
 
-\textcolor{red}{For every layer of CNNs, the scales, zero-points, and the precomputed multipliers, together with the structural metadata (e.g., layer type, input/output channels, kernel size, residual links between layers, etc.) are extracted and serialized into a JSON file. It is consumed by the coordinator and as C++ headers into each worker's Flash.}
+For every layer of the CNN, the scales, zero-points, and precomputed
+multipliers, together with the structural metadata (e.g., layer type,
+input and output channels, kernel size, and residual links between layers) are
+extracted and serialized into a single JSON file. This file is consumed directly
+by the coordinator and is additionally emitted as C++ headers that are compiled
+into each worker's Flash, so that both sides operate from an identical
+description of the quantized model.
 
 \subsection{Planner}
 The planner compiles the quantized model graph into a communication-aware execution plan.
@@ -136,27 +149,26 @@ The online part of Algorithm~\ref{alg:plan-execute} (lines~\ref{ln:online-start}
 The coordinator is an event-driven server, built on an asynchronous I/O event loop to handle multiple concurrent connections from workers.
 As shown in Figure~\ref{fig:coordinator-components}, it is organized into a set of decoupled components:
 \begin{itemize}
-    \item \textbf{Worker manager}: maintains the connection state of each worker, including the network connections and the message framing;
-    \item \textbf{Inference engine}: drives the execution based on the preprocessed execution plan and holds all inference state;
-    \item \textbf{Task distributor}: performs the workload splitting and the communication with workers. Tasks are assigned through a pluggable \emph{strategy mapper} that supplies the block grouping decided offline.
+    \item \textbf{Inference engine}: drives the execution based on the preprocessed execution plan and holds all inference state.
+    \item \textbf{Worker manager}: maintains the connection state of each worker, including the network connections and the message framing.
+    \item \textbf{Strategy mapper}: works as a pluggable component that determines how consecutive layers are grouped into blocks offline.
+    \item \textbf{Task distributor}: splits the workload and communicates the resulting tasks to the workers.
 \end{itemize}
 
+Figure~\ref{fig:coordinator-workflow} illustrates the coordinator's workflow as the messages exchanged among its components and the workers.
+A worker first joins through a registration handshake: it sends a \emph{Register} message to the worker manager, which replies with an \emph{ACK} once the worker has been assigned an ID.
+Driven by the engine, the task distributor then consults the \emph{strategy mapper} for the block grouping decided offline and dispatches the per-worker tasks to the worker manager.
+The worker manager forwards each task to its worker as a \emph{Task} message and, once the worker finishes, returns the corresponding \emph{Result} message.
+The distributor collects these results and issues an \emph{Update Inference} to the engine, which updates the inference state and advances to the next block.
+This loop repeats until every block in the plan has been executed. During the inference, the engine also handles error conditions such as worker disconnections or timeouts, retrying or reassigning tasks as needed.
 
-% The guiding principle is to keep these components independent behind a unified interface that the inference engine uses to drive execution.
 The design principle of the coordinator is to abstract the independent components and provide a unified interface for the inference engine to drive the execution.
 The engine is agnostic to \emph{how} tasks reach workers, which is the distributor's responsibility, and to \emph{how} layers are grouped into blocks, which is the strategy mapper's responsibility.
 This decoupling makes the coordinator flexible: a single engine can support different models, different numbers of workers, and different strategies for block grouping and task distribution without modification.
 
-% \paragraph{Worker Manager.} 
-% The worker manager abstracts the network transport from the rest of the system. When a worker tries to connect to the coordinator, it will first go through a short registration handshake defined in the application layer. 
-% The worker needs to announce itself and provide its clock frequency, so the coordinator can reply with an assigned unique worker ID. 
-% \textcolor{red}{Each connection is tracked by a state machine that handles the connection state and the message framing.} 
-% Idle workers are kept in a queue from which the engine draws when dispatching the next round of tasks. \textcolor{red}{Nagle's algorithm is disabled on each connection so that small task descriptors are sent without delay.}
-
-% Connection manager is responsible for establishing and maintaining the TCP connections with workers. 
-% It maintains and hadles the connection state of each worker, including the network connections and the message framing. 
-% It also provides a unified interface for the inference engine to send and receive messages to/from workers. 
-% The connection manager is designed to be robust and fault-tolerant, handling worker disconnections and reconnections gracefully.
+\paragraph{Inference Engine.}
+The inference engine is the stateful core of the coordinator and drives the execution of the inference plan.
+It maintains the state of the inference process, including the current block or layer being executed, the input and output activations, and the intermediate results.
 
 \paragraph{Worker Manager.}
 The worker manager abstracts the network transport from the rest of the system and owns the TCP connection to each worker.
@@ -167,26 +179,10 @@ Idle workers are held in a queue from which the inference engine draws when disp
 When the manager detects a disconnection from the workers, it immediately shuts down and resets the status of all existing connections, keeping the transport robust and fault-tolerant.
 % Disconnections and reconnections are handled gracefully, keeping the transport robust and fault-tolerant.
 
-% \paragraph{Inference Engine.} 
-% The inference engine is a stateful core of the coordinator, which drives the execution of the inference plan. It maintains the state of the inference process, including the current layer/block being executed, the input/output activations, and the intermediate results. 
-
-% \textcolor{red}{Figure~\ref{fig:tbd} illustrates the state machine of the inference engine.}  
-% Upon finishing the TCP handshake with the worker, the engine transitions to the \emph{WAIT} state, waiting for applicatin confirmation from the worker. 
-% Once the worker is ready and sends a \emph{READY} message, the engine immediately wrapps and sends the first task to the worker, and transitions to the \emph{IDLE} state, waiting for the \emph{Result} defined in the protocol. 
-% Upon receiving the result, the engine updates the inference state and sends the next task to the worker. 
-% The engine continues this process until all tasks are completed, and transitions back to the \emph{IDLE} state, waiting for the next inference request. The engine also handles error conditions, such as worker disconnections or timeouts, and can retry or reassign tasks as needed.
-
-
-\paragraph{Inference Engine.}
-The inference engine is the stateful core of the coordinator and drives the execution of the inference plan.
-It maintains the state of the inference process, including the current block or layer being executed, the input and output activations, and the intermediate results.
-
-Figure~\ref{fig:coordinator-workflow} illustrates the coordinator's workflow as the messages exchanged among its components and the workers.
-A worker first joins through a registration handshake: it sends a \emph{Register} message to the worker manager, which replies with an \emph{ACK} once the worker has been assigned an ID.
-Driven by the engine, the task distributor then consults the \emph{strategy mapper} for the block grouping decided offline and dispatches the per-worker tasks to the worker manager.
-The worker manager forwards each task to its worker as a \emph{Task} message and, once the worker finishes, returns the corresponding \emph{Result} message.
-The distributor collects these results and issues an \emph{Update Inference} to the engine, which updates the inference state and advances to the next block.
-This loop repeats until every block in the plan has been executed. During the inference, the engine also handles error conditions such as worker disconnections or timeouts, retrying or reassigning tasks as needed.
+\paragraph{Strategy Mapper.}
+The strategy mapper is a pluggable component that decides how consecutive layers of the model are grouped into blocks offline. The resulting block structure is the unit at which the inference engine advances and the task distributor splits work, so the mapper effectively defines the boundaries at which activations are exchanged between the coordinator and the workers.
+Because it is consulted only offline and exposed through a fixed interface, 
+users can easily extend the system for different grouping strategies, and enable them without changing the engine or the distributor.
 
 
 \begin{figure}[t]
@@ -224,6 +220,9 @@ For the fully connected layer, the distributor simply splits the the layer by ou
     o_e^i &= \min\left((i+1)\left\lceil \frac{ C_{\mathrm{out}}}{N} \right\rceil, C_{\mathrm{out}}\right).
 \end{align}
 
+
+
+
 \subsection{Worker Design}
 \label{sec:worker-design}
 \begin{figure}[t]
@@ -237,13 +236,13 @@ For the fully connected layer, the distributor simply splits the the layer by ou
 A worker is a lightweight executor driven entirely by the tasks it receives from the coordinator without a scheduler of its own.
 As shown in Figure~\ref{fig:worker-state-machine}, there are two phases during its life cycle.
 
-During the \emph{initialization phase}, the worker moves from \emph{Disconnected} to \emph{Connecting} as it establishes the TCP connection, then to \emph{Registering}, where it completes the registration handshake with the worker manager (Section~\ref{sec:coordinator-design}) by announcing itself and receiving its worker ID in the application layer.
+During the \emph{initialization phase}, the worker moves from \emph{Disconnected} to \emph{Connecting} as it establishes the TCP connection, then to \emph{Registering}, where it completes the registration handshake with the worker manager mentioned in Section~\ref{sec:coordinator-design} by announcing itself and receiving its worker ID in the application layer.
 It then settles into \emph{Idle}, ready to serve tasks.
 
-The worker then runs an \emph{event-driven loop}. On receiving a task it enters \emph{Receiving Task}, reconstructs the input activations from the received data, and loads the corresponding weights from Flash.
-It transitions to \emph{Computing}, where it selects the appropriate computation kernel based on the layer type and the available memory, and performs the computation.
+During the inference, the worker runs an \emph{event-driven loop}. On receiving a task it enters \emph{Receiving Task}, reconstructs the input activations from the received data, and loads the corresponding weights from Flash.
+After loading, it transitions to \emph{Computing}, where it selects the appropriate computation kernel based on the layer type and the available memory, and performs the computation.
 Finally, in \emph{Sending Result} it returns the output activations to the coordinator and falls back to \emph{Idle} to await the next task.
-A malformed or out-of-order task instead takes the \emph{Task Invalid} transition, which is reported to the coordinator rather than executed.
+When encountered a malformed or out-of-order task, the worker takes the \emph{Task Invalid} transition, which is reported to the coordinator rather than executed.
 
 
 
@@ -286,10 +285,11 @@ Following the coordinator and worker designs, the protocol must satisfy four req
 \begin{itemize}
     \item \textbf{Dynamic admission.} It must admit workers dynamically and bind each physical device to the logical worker ID assigned by the coordinator, so that the coordinator can manage the worker set and assign tasks at runtime.
     \item \textbf{Self-contained tasks.} It must carry a task descriptor complete enough for a worker to execute a layer or block without prior knowledge of the model, such as the layer or block index range, the input and output dimensions, and the convolution parameters.
-    \item \textbf{Reliable framing.} It must frame variable-size payloads reliably over the TCP byte stream, so that messages of arbitrary size can be transferred.
-    \item \textbf{Optimization support.} It must express our two optimizations, block-wise local execution (Section~\ref{sec:block-wise-local-execution}) and cross-block data reuse (Section~\ref{sec:cross-block-data-reuse}), so their boundary and reuse decisions can be encoded per task.
+    \item \textbf{Reliable framing.} It must frame variable-size payloads reliably over the byte stream, so that messages of arbitrary size can be transferred.
+    \item \textbf{Uniform support.} It must support both naive distributed
+    inference and our proposed optimizations through a single and unified format,
+    informing worker at runtime whether optimization should be enabled.
 \end{itemize}
-
 
 % These requirements lead to a small custom binary protocol on top of TCP.
 % TCP provides the reliable and ordered delivery that multi-kilobyte tensor transfers need, which a datagram transport such as UDP would fail and have to rebuild by hand.
@@ -305,15 +305,17 @@ First, we build on TCP rather than a datagram transport.
 Multi-kilobyte tensor transfers need reliable, ordered delivery. Over UDP, the protocol would have to rebuild those guarantees by hand.
 TCP also contains the built-in flow control, so the protocol does not need sequence numbers or windowing of its own.
 
-Second, we use a custom binary encoding rather than a general serialisation format, which keeps the worker's parsing cost near zero.
-Each message is a fixed-layout record that the MCU reads directly into a struct, with no parser, dynamic allocation, or per-field interpretation.
-A self-describing format would cost little here, since the descriptor spans only tens of bytes, while the payload it accompanies is hundreds of times larger, up to several kilobytes.
+Second, we use a custom binary encoding rather than a general serialization format, which keeps the worker's parsing cost near zero.
+Each message is a fixed-layout record that the MCU reads directly into a struct, without any parser, dynamic allocation, or per-field interpretation.
+% A self-describing format would cost little here, since the descriptor spans only tens of bytes, while the payload it accompanies is hundreds of times larger, up to several kilobytes.
 
-Third, the transport rhythm is stop-and-wait.
-Each worker holds at most one task, and the offline plan already fixes a total order over the steps, so one task and one result per round is all the coordination the system needs---no reordering or in-flight windowing on top of TCP.
+Third, we adopt a strictly ordered transport strategy. Each worker holds at most
+one task at a time, and the offline plan already fixes a total order over the
+steps, so one task and one result per round is all the system
+needs. There is no reordering or in-flight windowing layered on top of TCP.
 
 \paragraph{Message type.}
-As illustrated in Table~\ref{tab:message-type}, the protocol defines six message types, grouped by inference phase in Figure~\ref{fig:coordinator-workflow}.
+As illustrated in Table~\ref{tab:message-type}, the protocol defines six message types grouped by inference phase.
 In the initialization phase, a worker announces itself with a \emph{registration} message reporting its clock frequency, and the coordinator replies with an \emph{acknowledge} message carrying an assigned worker identifier.
 This identifier binds the physical device to the logical index the plan refers to, so the plan never depends on the physical board order.
 In the execution phase, the coordinator issues one \emph{task} message per worker for each plan entry and receives one \emph{result} message in return.
@@ -328,7 +330,7 @@ The remaining two types handle exceptions and shutdown. A worker raises a typed 
 \paragraph{Framing.}
 Every message shares the same frame.
 A sixteen-byte header carries a magic number, the message type, the worker identifier, and the length of the payload that follows.
-The magic number lets a receiver validate and resynchronise the stream, and the length field lets it read exactly one message before interpreting the next---all the framing a TCP byte stream requires.
+The magic number lets a receiver validate and resynchronize the stream, and the length field lets it read exactly one message before interpreting the next.
 For a task, the bulk tensor data follows the descriptor within the same round.
 The descriptor states how many payload bytes arrive, and the reuse flags state how to interpret them: either as a full input patch, or as the top and bottom boundary rows that complement a cached slice.
 Descriptor and data therefore reach the worker together, so each plan step costs exactly one round trip per worker, without separate control and data channels.
@@ -361,7 +363,7 @@ expected producer block, return-boundary flag \vspace{2mm} \\
 \end{table}
 
 
-The task descriptor is the materialisation of one plan entry, and its fields fall into the three groups of Table~\ref{tab:sd-task}.
+The task descriptor is the materialization of one plan entry, and its fields fall into the three groups of Table~\ref{tab:sd-task}.
 \begin{itemize}
     \item \emph{Kernel information} group carries the input and output dimensions, and the size of convolution parameters that enable the naive inference in the system;
     \item \emph{Block-wise execution} group names the layer type together with the first and last layer indices, so the same message expresses a single layer when the two indices coincide and a fused block when they span an IRB. Therefore, we can easily extend our optimization in Section~\ref{sec:block-wise-local-execution} for workers;
@@ -373,8 +375,8 @@ The task descriptor is the materialisation of one plan entry, and its fields fal
 
 Four properties of this descriptor carry the design.
 It is \emph{self-contained}: a worker needs nothing beyond the descriptor, its payload, and its Flash-resident weights to execute a step.
-It is \emph{uniform}: every optimisation field defaults to zero, so a plain layer-wise task simply leaves them unset, and the baseline and every combination of the two mechanisms run over the identical protocol---later comparisons between execution modes therefore carry no protocol differences.
-It is \emph{self-checking}: the expected producer index acts as a freshness token for the worker's cache; a worker whose cache does not match the token reports an error instead of computing on stale rows, and the coordinator falls back to a full transfer, realising the invalidation rule of Section~\ref{sec:cross-conditions} at runtime.
+It is \emph{uniform}: every optimization field defaults to zero, so a plain layer-wise task simply leaves them unset, and the baseline and every combination of the two mechanisms run over the identical protocol---later comparisons between execution modes therefore carry no protocol differences.
+It is \emph{self-checking}: the expected producer index acts as a freshness token for the worker's cache; a worker whose cache does not match the token reports an error instead of computing on stale rows, and the coordinator falls back to a full transfer, realizing the invalidation rule of Section~\ref{sec:cross-conditions} at runtime.
 And it is \emph{cheap}: the descriptor spans tens of bytes against tensor payloads of kilobytes.
 
 
@@ -491,7 +493,7 @@ Block-wise local execution trades communication for computation, as each worker 
 \end{equation}
 
 Under layer-wise strategy, there is no redundant computation for the overlapping rows, since output rows are partitioned and assigned to a single worker only once. 
-However, under block-wise local execution, although the output rows of projection layer are still partitioned and assigned to workers only once, each worker must compute the overlapped slice during the local execution of the depthwise convolution as shown in Figure~\ref{fig:kernel-overlap}. We capture this overlapped redundancy with the \emph{overlap ratio}:
+However, under block-wise local execution, although the output rows of projection layer are still partitioned and assigned to workers only once, each worker must compute the overlapped slice during the local execution of the depthwise convolution. We capture this overlapped redundancy with the \emph{overlap ratio}:
 \begin{equation}
     \rho = \frac{1}{H}\sum_{i=0}^{N-1}(y_e^i - y_s^i),
     \label{eq:overlap-ratio}
@@ -514,7 +516,7 @@ Combined~(\ref{eq:overlap}) with~(\ref{eq:overlap-ratio}), we can express the ov
     \item Height of the input feature map $H$: A taller input feature map reduces the overlap ratio, as the overlapping rows become a smaller fraction of the total input.
 \end{itemize}
 
-Therefore, the block-wise local execution effect is therefore strongly position-dependent. For an early high-resolution block where $H=112$ with a $3\times3$ depthwise kernel on $N=4$ workers, the overlap ratio is $\rho\approx 1.05$, indicating a nearly free gain. However, for a deep low-resolution block where $H=7$ with a larger $5\times5$ kernel on $N=4$ workers, the overlap ratio is $\rho\approx 2.7$, indicating a significant amount of redundant computation that can easily offset the communication savings.
+Therefore, the block-wise local execution effect is strongly position-dependent. For an early high-resolution block where $H=112$ with a $3\times3$ depthwise kernel on $N=4$ workers, the overlap ratio is $\rho\approx 1.05$, indicating a nearly free gain. However, for a deep low-resolution block where $H=7$ with a larger $5\times5$ kernel on $N=4$ workers, the overlap ratio is $\rho\approx 2.7$, indicating a significant amount of redundant computation that can easily offset the communication savings.
 
 \paragraph{Adaptive selection.}
 This position dependence motivates us a per-block decision on whether to apply block-wise local execution or fall back to layer-wise strategy. (\ref{eq:model-selection}) formalizes our adaptive selection of execution mode for each block $B$ based on the overlap ratio $\rho(B)$ and a manual tunable threshold $\tau$. If the overlap ratio is below the threshold, we apply block-wise local execution; otherwise, we revert to layer-wise strategy. 
@@ -526,7 +528,7 @@ This position dependence motivates us a per-block decision on whether to apply b
     \label{eq:model-selection}
 \end{equation}
 
-The threshold can be determined empirically based on the specific model architecture and hardware characteristics. We set $\tau=2$ on a four-worker cluster. A faster network prefers a smaller $\tau$, since communication is cheap and redundant expansion dominates the cost, while a bandwidth-constrained network prefers a larger $\tau$. 
+The threshold can be determined empirically based on the specific model architecture and hardware characteristics. We set $\tau=2$ in our the system. A faster network prefers a smaller $\tau$, since communication is cheap and redundant expansion dominates the cost, while a bandwidth-constrained network prefers a larger $\tau$. 
 
 
 
@@ -612,7 +614,7 @@ Cross-block data reuse is employed only when it does not compromise the accuracy
 
 The first is the residual addition. When a block consumes a residual, the coordinator dequantizes the cached residual and the current block output, adds them together, and requantizes the sum in place as
 \begin{equation}
-    y = clip(round(\frac{(c-z_c)s_c+(r-z_r)s_r}{s_t} + z_t), 0, 255),
+    y = \mathrm{clip}(\mathrm{round}(\frac{(c-z_c)s_c+(r-z_r)s_r}{s_t} + z_t), 0, 255),
 \end{equation}
 where $(s,s_c,z_c)$ denotes the current block output with its scale and zero-point, and $(r,s_r,z_r)$ denotes the cached residual. This computation changes the cached data in the coordinator, while the worker's cache still holds the pre-residual output. Therefore, the worker's cache is invalid and cannot be reused for the next block. The following block must fall back to a full transfer that replaces the worker's cache with the coordinator's updated data.
 
