@@ -31,7 +31,7 @@ In this section, we evaluate the performance of our framework on real hardware. 
 
 % We evaluate our system on a testbed consisting of up to 8 Teensy 4.1 as workers with four representative CNNs for edge vision tasks. 
 \subsection{Hardware}
-As described in Section~\ref{sec:implementation-hardware-platform}, the testbed consists of up to 6 Teensy 4.1 boards as workers and a TP-Link TL-SG116 gigabit switch to connect the workers and the coordinator. 
+As described in Section~\ref{sec:implementation-hardware-platform}, the testbed consists of up to six Teensy 4.1 boards as workers and a TP-Link TL-SG116 gigabit switch to connect the workers and the coordinator. 
 
 \subsection{Models}
 \begin{table}[b]
@@ -40,7 +40,7 @@ As described in Section~\ref{sec:implementation-hardware-platform}, the testbed 
     \centering
     \setlength{\tabcolsep}{8pt}
     \resizebox{\columnwidth}{!}{%
-    \begin{tabular}{c c c c c}
+    \begin{tabular}{l c c c c}
         \toprule
         \textbf{Model} & \textbf{Input} & \textbf{Expansion} & \textbf{DW Kernel} & \textbf{Peak Mem.} \\
         \midrule
@@ -57,7 +57,7 @@ Inside each block, the expansion ratio determines how much temporary data is cre
 The peak memory is the peak activation footprint if only a single MCU is used during inference.
 
 \subsection{Baseline and metrics}
-We compare our framework with a baseline that runs the same models in a naive layer-wise strategy which communicates at every layer boundary and holds each intermediate feature map in full at the coordinator. Our framework adds the two core mechanisms (\emph{A: block-wise local execution} and \emph{B: cross-block data reuse}) to the baseline as discussed in Section~\ref{sec:block-wise-local-execution} and Section~\ref{sec:cross-block-data-reuse}.
+We compare our framework with a baseline that runs the same models in a naive layer-wise strategy which communicates at every layer boundary and holds each intermediate feature map in full at the coordinator. Our framework adds the two core mechanisms (\emph{block-wise local execution} and \emph{cross-block data reuse}) to the baseline as discussed in Section~\ref{sec:block-wise-local-execution} and Section~\ref{sec:cross-block-data-reuse}.
 
 We evaluate from three aspects: communication overhead, end-to-end inference latency, and peak memory footprint. Communication overhead measures the total amount of data transferred between the coordinator and workers during inference. End-to-end inference latency measures the time taken from sending the input to receiving the output. Peak memory footprint measures the maximum memory used by the coordinator and workers at runtime, as memory is a critical resource on MCUs.
 
@@ -88,7 +88,7 @@ We evaluate from three aspects: communication overhead, end-to-end inference lat
         \centering
         \includegraphics[width=\linewidth]{figs/comm/column/comm_mnasnet_05.pdf}
         % \vspace{-2mm}
-        \caption{MnasNet-0.5}
+        \caption{MnasNet}
         \label{fig:comm-mnasnet}
       \end{subfigure}
       % \hspace{1mm}
@@ -101,7 +101,7 @@ We evaluate from three aspects: communication overhead, end-to-end inference lat
         \label{fig:comm-proxylessnas}
       \end{subfigure}
       % \hfill
-  \caption{Communication overhead.}
+  \caption{Communication overhead on 2, 4, and 6 workers (top to bottom rows) across the four models.}
   \label{fig:results-comm}
 \end{figure}
 
@@ -149,19 +149,61 @@ We evaluate from three aspects: communication overhead, end-to-end inference lat
 
 We first break down inference to evaluate the communication cost. Figure~\ref{fig:results-comm} reports the communication latency of the initial convolution and the first four inverted residual blocks on two, four, and six workers for each model respectively. These early layers operate on the largest feature maps and therefore expose the communication cost most clearly.
 
-The communication overhead dominates these layers in the baseline system. Take four workers as an instance, the communication latency of the first IRB reaches about 39 ms on MobileNetV2-0.35, 74 ms on MnasNet-0.5, 79 ms on MCUNet-in4, and 156 ms on ProxylessNAS. Since the output of each layer needs to be sent to the coordinator and then re-scattered to the workers, the network transfer of intermediate activations becomes a significant bottleneck. 
+The communication overhead dominates these layers in the baseline system. Taking the four-worker configuration as an example, the communication latency of the first IRB reaches about 39 ms on MobileNetV2-0.35, 74 ms on MnasNet-0.5, 79 ms on MCUNet-in4, and 156 ms on ProxylessNAS. Since the output of each layer needs to be sent to the coordinator and then re-scattered to the workers, the network transfer of intermediate activations becomes a significant bottleneck. 
 
 \emph{Ours} significantly reduces the communication overhead. Our block-wise local execution keeps the expanded activation inside the worker so that it never needs to cross the network. Our cross-block data reuse only requires the communication of the thin boundary rows between adjacent workers. Therefore, the per-block communication latency falls to a few milliseconds. On the first IRB of ProxylessNAS at four workers, the latency reduction is approximately 94\%. \emph{Ours} consistently outperforms the baseline across all models and layers, demonstrating the effectiveness of our framework in reducing communication overhead.
 
 \section{End-to-end Inference Latency}
 \label{sec:eval-end2end-infer-latency}
 
+% \begin{figure}[t]
+%     \centering
+%     \includegraphics[width=\linewidth]{figs/latency/latency_1x4.pdf}
+%     \caption{End-to-end latency of collaborative inference across different numbers of MCUs.}
+%     \label{fig:results-latency}
+% \end{figure}
+
 \begin{figure}[t]
     \centering
-    \includegraphics[width=\linewidth]{figs/latency/latency_1x4.pdf}
+        % MobileNetV2-0.35
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/latency/latency_mobilenetv2_035.pdf}
+        % \vspace{-2mm}
+        \caption{MobileNetV2}
+        \label{fig:latency-mbv2}
+      \end{subfigure}
+      % \hspace{1mm}
+        % MCUNet
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/latency/latency_mcunet.pdf}
+        % \vspace{-2mm}
+        \caption{MCUNet}
+        \label{fig:latency-mcunet}
+      \end{subfigure}
+      % \\ \vspace{1mm}
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/latency/latency_mnasnet_05.pdf}
+        % \vspace{-2mm}
+        \caption{MnasNet}
+        \label{fig:memory-mnasnet}
+      \end{subfigure}
+      % \hspace{1mm}
+        % ProxylessNAS-Mobile
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/latency/latency_proxylessnas_mobile.pdf}
+        % \vspace{-2mm}
+        \caption{ProxylessNAS}
+        \label{fig:memory-proxylessnas}
+      \end{subfigure}
+      % \hfill
     \caption{End-to-end latency of collaborative inference across different numbers of MCUs.}
     \label{fig:results-latency}
 \end{figure}
+
 
 \begin{figure}[t]
     \centering
@@ -187,7 +229,7 @@ The communication overhead dominates these layers in the baseline system. Take f
         \centering
         \includegraphics[width=\linewidth]{figs/memory/column/coord_mnasnet_05.pdf}
         % \vspace{-2mm}
-        \caption{MnasNet-0.5}
+        \caption{MnasNet}
         \label{fig:memory-mnasnet}
       \end{subfigure}
       % \hspace{1mm}
@@ -200,7 +242,7 @@ The communication overhead dominates these layers in the baseline system. Take f
         \label{fig:memory-proxylessnas}
       \end{subfigure}
       % \hfill
-  \caption{The peak memory usage at the coordinator.}
+  \caption{The peak memory usage at the coordinator on 2, 4, and 6 workers (top to bottom rows) across the four models.}
   \label{fig:results-memory}
 \end{figure}
 
@@ -278,7 +320,7 @@ Another observation is that although the end-to-end inference latency falls as w
         \centering
         \includegraphics[width=\linewidth]{figs/memory/column/worker_mnasnet_05.pdf}
         % \vspace{-2mm}
-        \caption{MnasNet-0.5}
+        \caption{MnasNet}
         \label{fig:memory-mnasnet-worker}
       \end{subfigure}
       % \hspace{1mm}
@@ -291,7 +333,7 @@ Another observation is that although the end-to-end inference latency falls as w
         \label{fig:memory-proxylessnas-worker}
       \end{subfigure}
       % \hfill
-  \caption{The peak memory usage at the workers.}
+  \caption{The peak memory usage at the workers on 2, 4, and 6 workers (top to bottom rows) across the four models.}
   \label{fig:results-memory-worker}
 \end{figure}
 
@@ -404,30 +446,64 @@ again in the early high-resolution blocks.
 \section{Ablation Study}
 \label{sec:eval-ablation-study}
 
-\begin{table*}[t]
+\begin{table}[t]
 \centering
-\caption{Ablation study of the proposed framework under the collaborative inference on 4 MCUs. (Communication is summed over the initial convolution and the first four blocks; Memory is the coordinator peak across blocks)}
-  % \textbf{A}: block-wise local execution; \textbf{B}: cross-block data reuse; \emph{Ours} enables both.
+\caption{Ablation study of the proposed framework under collaborative inference on 4 MCUs. Communication is summed over the initial convolution and the first four blocks; Memory is the coordinator peak across blocks.}
 \label{tab:eval-ablation}
-  \setlength{\tabcolsep}{1pt}
-      \resizebox{\columnwidth}{!}{
-          \begin{tabular}{c cccc cccc cccc}
-          \toprule
-          & \multicolumn{4}{c}{Communication (ms)} & \multicolumn{4}{c}{End-to-end Inference Latency (ms)} & \multicolumn{4}{c}{Memory (KB)} \\
-          \cmidrule(lr){2-5}\cmidrule(lr){6-9}\cmidrule(lr){10-13}
-          Model  
-          & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm} 
-          & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm} 
-          & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm}  \\
-          \midrule
-          MobileNetV2-0.35 & 87  & 20  & 52  & \textbf{15}  & 459  & 332  & 400  & \textbf{321}  & 735 & 343 & 318 & \textbf{158} \\
-          MCUNet           & 284 & 56  & 120 & \textbf{30}  & 938  & 601  & 690  & \textbf{552}  & 412 & 275 & 412 & \textbf{112} \\
-          MnasNet-0.5      & 253 & 64  & 113 & \textbf{38}  & 920  & 539  & 651  & \textbf{486}  & 392 & 343 & 343 & \textbf{158} \\
-          ProxylessNAS     & 432 & 107 & 159 & \textbf{52}  & 1862 & 1282 & 1368 & \textbf{1174} & 784 & 539 & 686 & \textbf{294} \\
-          \bottomrule
-          \end{tabular}
-      }
-\end{table*}
+\setlength{\tabcolsep}{6pt}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}ll cccc@{}}
+\toprule
+\textbf{Model} & \textbf{Metric} & w/o A,B & w/o B & w/o A & \textbf{Ours} \\
+\midrule
+\multirow{3}{*}{MobileNetV2}
+  & Communication (ms)  & 87   & 20   & 52   & \textbf{15}   \\
+  & Latency (ms) & 459  & 332  & 400  & \textbf{321}  \\
+  & Memory\ (KB)   & 735  & 343  & 318  & \textbf{158}  \\
+\midrule
+\multirow{3}{*}{MCUNet}
+  & Communication (ms)  & 284  & 56   & 120  & \textbf{30}   \\
+  & Latency (ms) & 938  & 601  & 690  & \textbf{552}  \\
+  & Memory\ (KB)   & 412  & 275  & 412  & \textbf{112}  \\
+\midrule
+\multirow{3}{*}{MnasNet}
+  & Communication (ms)  & 253  & 64   & 113  & \textbf{38}   \\
+  & Latency (ms) & 920  & 539  & 651  & \textbf{486}  \\
+  & Memory\ (KB)   & 392  & 343  & 343  & \textbf{158}  \\
+\midrule
+\multirow{3}{*}{ProxylessNAS}
+  & Communication (ms)  & 432  & 107  & 159  & \textbf{52}   \\
+  & Latency (ms) & 1862 & 1282 & 1368 & \textbf{1174} \\
+  & Memory\ (KB)   & 784  & 539  & 686  & \textbf{294}  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% \begin{table*}[t]
+% \centering
+% \caption{Ablation study of the proposed framework under the collaborative inference on 4 MCUs. (Communication is summed over the initial convolution and the first four blocks; Memory is the coordinator peak across blocks)}
+%   % \textbf{A}: block-wise local execution; \textbf{B}: cross-block data reuse; \emph{Ours} enables both.
+% \label{tab:eval-ablation}
+%   \setlength{\tabcolsep}{1pt}
+%       \resizebox{\columnwidth}{!}{
+%           \begin{tabular}{c cccc cccc cccc}
+%           \toprule
+%           & \multicolumn{4}{c}{Communication (ms)} & \multicolumn{4}{c}{End-to-end Inference Latency (ms)} & \multicolumn{4}{c}{Memory (KB)} \\
+%           \cmidrule(lr){2-5}\cmidrule(lr){6-9}\cmidrule(lr){10-13}
+%           Model  
+%           & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm} 
+%           & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm} 
+%           & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm}  \\
+%           \midrule
+%           MobileNetV2-0.35 & 87  & 20  & 52  & \textbf{15}  & 459  & 332  & 400  & \textbf{321}  & 735 & 343 & 318 & \textbf{158} \\
+%           MCUNet           & 284 & 56  & 120 & \textbf{30}  & 938  & 601  & 690  & \textbf{552}  & 412 & 275 & 412 & \textbf{112} \\
+%           MnasNet-0.5      & 253 & 64  & 113 & \textbf{38}  & 920  & 539  & 651  & \textbf{486}  & 392 & 343 & 343 & \textbf{158} \\
+%           ProxylessNAS     & 432 & 107 & 159 & \textbf{52}  & 1862 & 1282 & 1368 & \textbf{1174} & 784 & 539 & 686 & \textbf{294} \\
+%           \bottomrule
+%           \end{tabular}
+%       }
+% \end{table*}
 
 Finally, we separate and evaluate the contribution of two mechanisms (\emph{A:block-wise local execution} and \emph{B:cross-block data reuse}) through an ablation study on four workers. We conduct the study with four ablated configurations: ``\emph{Ours w/o A,B}'' disables both mechanisms and is equivalent to the baseline; ``\emph{Ours w/o A}'' disables block-wise local execution but keeps cross-block data reuse; ``\emph{Ours w/o B}'' disables cross-block data reuse but keeps block-wise local execution; and ``\emph{Ours}'' enables both mechanisms.
 
