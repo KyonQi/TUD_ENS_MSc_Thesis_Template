@@ -200,7 +200,7 @@ The task distributor carries out the splitting of workload and the communication
 \end{equation}
 and the output width $W_{\mathrm{out}}$ is computed similarly. 
 
-The distributor splits the $H_{\mathrm{out}}$ output rows into $N$ chunks, where $N$ is the number of workers. Worker $i$ is therefore produces the output rows $[o_s^i, o_e^i)$, where the start and end rows are computed as:
+The distributor splits the $H_{\mathrm{out}}$ output rows into $N$ chunks, where $N$ is the number of workers. Worker $i$ therefore produces the output rows $[o_s^i, o_e^i)$, where the start and end rows are computed as:
 \begin{align}
     o_s^i &= i\left\lceil \frac{ H_{\mathrm{out}}}{N} \right\rceil, \\
     o_e^i &= \min\left((i+1)\left\lceil \frac{ H_{\mathrm{out}}}{N} \right\rceil, H_{\mathrm{out}}\right).
@@ -214,7 +214,7 @@ Due to the nature of convolution, the input rows required by worker $i$ have to 
 
 Therefore, two adjacent workers $i$ and $i+1$ have overlapping input rows bounded by $k-s$ rows. It is the redundant computation overhead that will be further discussed in Section~\ref{sec:overlap-ratio-cost-model}. 
 
-For the fully connected layer, the distributor simply splits the the layer by output class with $N$ chunks and assigns worker $i$ to compute the output classes $[o_s^i, o_e^i)$, where
+For the fully connected layer, the distributor simply splits the layer by output class with $N$ chunks and assigns worker $i$ to compute the output classes $[o_s^i, o_e^i)$, where
 \begin{align}
     o_s^i &= i\left\lceil \frac{ C_{\mathrm{out}}}{N} \right\rceil, \\
     o_e^i &= \min\left((i+1)\left\lceil \frac{ C_{\mathrm{out}}}{N} \right\rceil, C_{\mathrm{out}}\right).
@@ -439,7 +439,7 @@ The byte-level encoding of these messages, and the discipline that keeps the coo
 
 
 A natural strategy to orchestrate the distributed execution of a CNN is to split the model in a layer-wise manner, where the coordinator splits a layer by rows, dispatches the tasks to workers, collects the partial outputs, reassembles the full feature map, and re-scatters it for the next layer. 
-This strategy is simple and straightforward, widely adopted by most distributed inference runtimes~[\textcolor{red}{refs}]. 
+This strategy is simple and straightforward, widely adopted by most distributed inference runtimes~\cite{split-modnn,coedge,DeepThings}. 
 
 However, it incurs a significant communication overhead for IRB-based CNNs as discussed in Section~\ref{sec:IRB}. 
 After the expanding layer, the number of channels is expanded by a factor of $e$, resulting in a large feature map that must be communicated between the coordinator and workers. 
@@ -501,7 +501,7 @@ However, under block-wise local execution, although the output rows of projectio
 where $H$ is the height of the input feature map, $N$ is the number of workers, and $[y_s^i, y_e^i)$ is the input row range assigned to worker $i$. 
 The overlap ratio $\rho$ represents the fraction of the input feature map that is redundantly computed by multiple workers. 
 A higher overlap ratio indicates more redundant computation, which can offset the communication savings achieved by block-wise local execution. 
-The ideal $\rho=1$ indicates there is no overlap among the workers, whereas $\rho\to N$ is the worst case where all workers has to contain the entire input feature map.
+The ideal $\rho=1$ indicates there is no overlap among the workers, whereas $\rho\to N$ is the worst case where all workers have to contain the entire input feature map.
 
 Combined~(\ref{eq:overlap}) with~(\ref{eq:overlap-ratio}), we can express the overlap ratio as a function of the kernel size $k$, stride $s$, and the number of workers $N$:
 \begin{equation}
@@ -511,7 +511,7 @@ Combined~(\ref{eq:overlap}) with~(\ref{eq:overlap-ratio}), we can express the ov
 
 (\ref{eq:overlap-ratio-func}) demonstrates three key factors that affect the overlap ratio: 
 \begin{itemize}
-    \item Number of workers $N$: $\rho$ grows with the worer count, indicating that finer partitioning of the input feature map leads to more overlap and redundant computation.
+    \item Number of workers $N$: $\rho$ grows with the worker count, indicating that finer partitioning of the input feature map leads to more overlap and redundant computation.
     \item Kernel size $k$ and stride $s$: A larger kernel size or a smaller stride increases the number of overlapping rows due to the nature of the convolution, leading to a higher overlap ratio.
     \item Height of the input feature map $H$: A taller input feature map reduces the overlap ratio, as the overlapping rows become a smaller fraction of the total input.
 \end{itemize}
@@ -519,7 +519,7 @@ Combined~(\ref{eq:overlap}) with~(\ref{eq:overlap-ratio}), we can express the ov
 Therefore, the block-wise local execution effect is strongly position-dependent. For an early high-resolution block where $H=112$ with a $3\times3$ depthwise kernel on $N=4$ workers, the overlap ratio is $\rho\approx 1.05$, indicating a nearly free gain. However, for a deep low-resolution block where $H=7$ with a larger $5\times5$ kernel on $N=4$ workers, the overlap ratio is $\rho\approx 2.7$, indicating a significant amount of redundant computation that can easily offset the communication savings.
 
 \paragraph{Adaptive selection.}
-This position dependence motivates us a per-block decision on whether to apply block-wise local execution or fall back to layer-wise strategy. (\ref{eq:model-selection}) formalizes our adaptive selection of execution mode for each block $B$ based on the overlap ratio $\rho(B)$ and a manual tunable threshold $\tau$. If the overlap ratio is below the threshold, we apply block-wise local execution; otherwise, we revert to layer-wise strategy. 
+This position dependence motivates us to make a per-block decision on whether to apply block-wise local execution or fall back to layer-wise strategy. (\ref{eq:model-selection}) formalizes our adaptive selection of execution mode for each block $B$ based on the overlap ratio $\rho(B)$ and a manual tunable threshold $\tau$. If the overlap ratio is below the threshold, we apply block-wise local execution; otherwise, we revert to layer-wise strategy. 
 \begin{equation}
     mode(B) = \begin{cases}
         \text{block-wise local execution}, & \text{if } \rho(B) \leq \tau, \\
@@ -528,7 +528,7 @@ This position dependence motivates us a per-block decision on whether to apply b
     \label{eq:model-selection}
 \end{equation}
 
-The threshold can be determined empirically based on the specific model architecture and hardware characteristics. We set $\tau=2$ in our the system. A faster network prefers a smaller $\tau$, since communication is cheap and redundant expansion dominates the cost, while a bandwidth-constrained network prefers a larger $\tau$. 
+The threshold can be determined empirically based on the specific model architecture and hardware characteristics. We set $\tau=2$ in our system. A faster network prefers a smaller $\tau$, since communication is cheap and redundant expansion dominates the cost, while a bandwidth-constrained network prefers a larger $\tau$. 
 
 
 
@@ -618,7 +618,7 @@ The first is the residual addition. When a block consumes a residual, the coordi
 \end{equation}
 where $(s,s_c,z_c)$ denotes the current block output with its scale and zero-point, and $(r,s_r,z_r)$ denotes the cached residual. This computation changes the cached data in the coordinator, while the worker's cache still holds the pre-residual output. Therefore, the worker's cache is invalid and cannot be reused for the next block. The following block must fall back to a full transfer that replaces the worker's cache with the coordinator's updated data.
 
-The second situation is global average polling together with the fully connected layer that consumes the pooled output. These operations squeeze the spatial dimensions of the feature map into a single value per channel, leaving no rows to reuse.
+The second situation is global average pooling together with the fully connected layer that consumes the pooled output. These operations squeeze the spatial dimensions of the feature map into a single value per channel, leaving no rows to reuse.
 
 As a result, we summarize the conditions that enable cross-block data reuse in Table~\ref{tab:reuse-conditions}. In practice, whether cross-block data reuse is enabled is determined by the architecture of the CNN. It is most valid on the early, high-resolution blocks where the boundary savings are also largest. 
 

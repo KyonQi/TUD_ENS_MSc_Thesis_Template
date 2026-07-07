@@ -379,7 +379,7 @@ Another observation is that although the end-to-end inference latency falls as w
 
 Figure~\ref{fig:results-memory} shows the coordinator peak memory per IRB on two, four, and six workers. In the baseline, the coordinator must materialize and buffer each intermediate feature map at runtime, so their peaks are determined by the largest feature maps of the model, which usually occur in the early high-resolution blocks. \emph{Ours} keeps these intermediates on the workers and returns only boundary rows, reducing the memory footprint of the workers significantly. 
 
-Concretely, on four workers the coordinator peak memory falls from 735 KB to 158 KB on MobileNetV2-0.35, from 412 KB to 112 KB on MCUNet, from 392 KB to 158 KB on MnasNet-0.5, and from 784 KB to 294 KB on ProxylessNAS, achieving a reduction between 60\% and 80\%. Therefore, \emph{Ours} alliviates the coordinator-side memory bottleneck that a single MCU cannot handle.
+Concretely, on four workers the coordinator peak memory falls from 735 KB to 158 KB on MobileNetV2-0.35, from 412 KB to 112 KB on MCUNet, from 392 KB to 158 KB on MnasNet-0.5, and from 784 KB to 294 KB on ProxylessNAS, achieving a reduction between 60\% and 80\%. Therefore, \emph{Ours} alleviates the coordinator-side memory bottleneck that a single MCU cannot handle.
 
 Figure~\ref{fig:results-memory-worker} further demonstrates the peak memory among workers during inference.
 Under block-wise local execution, the expanded activation does reside in the
@@ -429,7 +429,7 @@ again in the early high-resolution blocks.
       }
 \end{table*}
 
-Finally, we separate and evaluate the contribution of our two mechanisms (\emph{A:block-wise local execution} and \emph{B:cross-block data reuse}) through an ablation study on four workers. We conduct the study with four ablated configurations: ``\emph{Ours w/o A,B}'' disables both mechanisms and is equivalent to the baseline; ``\emph{Ours w/o A}'' disables block-wise local execution but keeps cross-block data reuse; ``\emph{Ours w/o B}'' disables cross-block data reuse but keeps block-wise local execution; and ``\emph{Ours}'' enables both mechanisms.
+Finally, we separate and evaluate the contribution of two mechanisms (\emph{A:block-wise local execution} and \emph{B:cross-block data reuse}) through an ablation study on four workers. We conduct the study with four ablated configurations: ``\emph{Ours w/o A,B}'' disables both mechanisms and is equivalent to the baseline; ``\emph{Ours w/o A}'' disables block-wise local execution but keeps cross-block data reuse; ``\emph{Ours w/o B}'' disables cross-block data reuse but keeps block-wise local execution; and ``\emph{Ours}'' enables both mechanisms.
 
 Table~\ref{tab:eval-ablation} illustrates the results of the ablation study. The communication sums the total communication delay of the initial convolution and the first four IRBs, and the memory is the coordinator peak memory across all blocks. It is clear that enabling `A' (\emph{w/o B}) alone cuts the early-block communication by 75\% to 80\% and shortens the end-to-end inference latency by 28\% to 40\%, since it removes the transfer of the expanded activation from the critical path. It also lowers the coordinator peak memory by 12\% to 53\% by keeping the intermediate feature maps on the workers. 
 

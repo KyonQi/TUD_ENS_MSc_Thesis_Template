@@ -9,13 +9,13 @@ Although distributing one model across several networked MCUs aggregates their m
 This turns the expanded activation inside each IRB into a network-level object and creates a severe communication bottleneck.
 During the inference, the network spends time on transmitting tensors that were never meant to leave a local device, and the coordinator must buffer intermediate activations that are larger than any single MCU can hold.
 
-To transform a standard CNN into a communication-efficient distributed execution across a cluster of networked MCUs, this thesis presents a inference framework that connects offline model preparation with online distributed execution.
+To transform a standard CNN into a communication-efficient distributed execution across a cluster of networked MCUs, this thesis presents an inference framework that connects offline model preparation with online distributed execution.
 The offline preprocessing stage quantizes a standard CNN to INT8 and compiles it into a communication-aware execution plan together with per-worker manifests, encoding the spatial partitions, weight placement, quantization metadata, block grouping, residual dependencies, and boundary reuse conditions that a single-device model file does not carry.
 This pipeline resolves the first challenge in Section~\ref{sec:intro:problem-statement}, turning distributed TinyML deployment from model-specific manual work into an automated and reproducible process.
 The online stage executes the plan on a coordinator-worker cluster over a lightweight binary protocol, and the workers simply follow the plan without making any global decision at runtime during inference.
 
-The second challenge, making the distributed execution communication- and memory-efficient, is addressed by the two jointly designed mechanisms of Chapter~\ref{chp:system_design}.
-Block-wise local execution moves the communication boundary from the layer boundary to the inverted residual block boundary, so each expanded activation is materialised and consumed inside a worker and never travels through the network.
+The second challenge, making the distributed execution communication- and memory-efficient, is addressed by the two designed mechanisms of Chapter~\ref{chp:system_design}.
+Block-wise local execution moves the communication boundary from the layer boundary to the inverted residual block boundary, so each expanded activation is materialized and consumed inside a worker and never travels through the network.
 Cross-block data reuse lets workers retain the rows they produced for one block and exchange only the thin boundary regions the next block requires, guarded by correctness conditions that are analyzed offline and enforced through the task metadata.
 An overlap-ratio cost model completes the design by characterizing when the redundant computation of fusion outweighs its communication saving, which enables an adaptive per-block choice of execution mode.
 
@@ -54,7 +54,7 @@ Sensing workloads, however, produce continuous streams.
 Pipelining consecutive inputs through the blocks would let the communication of one frame overlap with the computation of the next, raising throughput without changing the per-inference execution path.
 
 \paragraph{Beyond inverted residual blocks.}
-The strategy mapper isolates all architecture-specific knowledge, so supporting a new block pattern requires only one new grouping strategy.
+The strategy mapper isolates all architecture specific knowledge, so supporting a new block pattern requires only one new grouping strategy.
 Applying the framework to other structures, such as the attention blocks of compact transformer models, would test how far block-wise local execution generalizes.
 In the opposite direction, the correctness conditions show that an architecture's residual chains cap the achievable reuse coverage, which suggests co-designing future TinyML models to be distribution-friendly from the start.
 

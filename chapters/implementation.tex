@@ -20,14 +20,14 @@ Finally, we discuss some engineering details in Section~\ref{sec:implementation-
     \label{fig:testbed}
 \end{figure}
 
-Teensy 4.1 board is employed as the worker in our experiments. It is built with an NXP i.MX RT1062 microcontroller. The device has an Arm Cortex-M7 core running at 600 MHz with a hardware floating-point unit. The board has two 512 KB RAM and 8 MB Flash memory without a memory management unit. Network support is provided by an external Ethernet PHY chip with NativeEthernet library. As shown in Figure~\ref{fig:testbed}, the testbed connects up to six boards to a single TP-Link TL-SG116 gigabit switch. To simplify profiling and data collection, a Linux PC serves as the coordinator, while the worker-side execution runs on MCUs.
+Teensy 4.1 board is employed as the worker in our experiments. It is built with an NXP i.MX RT1062 microcontroller. The device has an Arm Cortex-M7 core running at 600 MHz with a hardware floating-point unit. The board has two 512 KB RAM banks and 8 MB Flash memory without a memory management unit. Network support is provided by an external Ethernet PHY chip with NativeEthernet library~\cite{NativeEthernet}. As shown in Figure~\ref{fig:testbed}, the testbed connects up to six boards to a single TP-Link TL-SG116 gigabit switch. To simplify profiling and data collection, a Linux PC serves as the coordinator, while the worker-side execution runs on MCUs.
 
 \section{Software Platform}
 The whole MCU firmware is built with PlatformIO~\cite{platformio} with separate environments for development, on-device unit testing, and deployment. The development environment enables debugging and logging, while the on-device unit testing environment runs a suite of tests to validate the correctness of the convolution and linear kernels. The deployment environment allows for the automated script to flash the firmware onto the Teensy 4.1 boards, saving manual efforts. 
 
 
 
-\section{Offline Toochain}
+\section{Offline Toolchain}
 \label{sec:implementation-offline-toolchain}
 \begin{table}[h]
     \centering
@@ -37,7 +37,7 @@ The whole MCU firmware is built with PlatformIO~\cite{platformio} with separate 
         \textbf{Manifest} & \textbf{Content} & \textbf{Consumer} \\
         % \hline \hline
         \hline
-        \texttt{model\_config.json} & ordered layer configurations and quantisation parameters & coordinator \\
+        \texttt{model\_config.json} & ordered layer configurations and quantization parameters & coordinator \\
         \hline
         \texttt{weights.h} &
         per-layer INT8 weight and INT32 bias arrays with a pointer table & worker Flash \\
@@ -67,7 +67,7 @@ The fused and quantized network is then flattened into an ordered list of layers
 This layer list is the metadata from which all manifests are generated, ensuring that the coordinator and the workers remain synchronized.
 
 \paragraph{Coordinator manifest.}
-For the coordinator, the manifest \verb|model_config.json| contains a list of layers with their corresponding input and output shapes, as well as the quantization parameters for each layer. 
+For the coordinator, the \verb|model_config.json| manifest contains a list of layers with their corresponding input and output shapes, as well as the quantization parameters for each layer. 
 The coordinator parses this manifest as a starting point to schedule the execution of the model across the workers. 
 
 \paragraph{Worker manifest.}
@@ -102,7 +102,7 @@ To support various execution plan in the coordinator, we abstract and implement 
 
 % Take MobilenetV2 as an instance, the layer-wise mapper wraps every layer in the IRB and executes them sequentially, while the block-wise mapper scans the layer list and groups all existing IRBs into execution units. The hybrid mapper first scans the layer list and applies the overlap-ratio cost function discussed in Section~\ref{sec:overlap-ratio-cost-model} to each IRB. The candidate block will be splitted back into layers when the ratio exceeds the threshold. 
 
-Take MobilenetV2 as an instance, the layer-wise mapper wraps every layer in the IRB and executes them sequentially, while the block-wise mapper first scans the layer list and applies the overlap-ratio cost function discussed in Section~\ref{sec:overlap-ratio-cost-model} to each IRB. The candidate block will be splitted back into layers when the ratio exceeds the threshold, while the others will be regarded as a single execution unit in workers. 
+Take MobilenetV2 as an instance, the layer-wise mapper wraps every layer in the IRB and executes them sequentially, while the block-wise mapper first scans the layer list and applies the overlap-ratio cost function discussed in Section~\ref{sec:overlap-ratio-cost-model} to each IRB. The candidate block will be split back into layers when the ratio exceeds the threshold, while the others will be regarded as a single execution unit in workers. 
 
 
 We make the framework agnostic to the mapper. To support a new model, the user only needs to implement a new mapper that inherits the \verb|strategy mapper| interface and designs their own execution plan and register it in the framework. The new mapper can be easily adapted when starting the coordinator with a command-line argument with the mapper name. 
@@ -114,10 +114,27 @@ We make the framework agnostic to the mapper. To support a new model, the user o
 
 The worker runtime implements the characteristics illustrated in Section~\ref{sec:worker-design}. It is written in C++, built on a baremetal MCU environment without RTOS.
 
-Since the Teensy 4.1 board does not have a memory management unit, we statically allocate a double buffer in the RAM for activations and intermediate results. Static buffers offers deterministic memory addresses, avoiding the overhead of dynamic memory allocation and fragmentation. 
+Since the Teensy 4.1 board does not have a memory management unit, we statically allocate a double buffer in the RAM for activations and intermediate results. Static buffers offer deterministic memory addresses, avoiding the overhead of dynamic memory allocation and fragmentation. 
 
 Figure~\ref{fig:memory-layout} illustrates our memory layout. RAM1 and RAM2 holds a 350 KB buffer respectively. The two buffers are used in a ping-pong manner, where one buffer is used to store the input data and the other buffer is used to store the output data. After each execution unit, the buffers are swapped. The weights are stored in Flash as read-only arrays, which are loaded into the SRAM during the execution of each execution unit. This design allows for efficient memory usage and avoids the need for additional dynamic memory allocation during runtime. 
 
+\paragraph{Block execution.}
+A block-wise task asks the worker to run several consecutive layers as one execution unit, which realizes the block-wise local execution of Section~\ref{sec:block-wise-local-execution} inside the \emph{Computing} state of Figure~\ref{fig:worker-state-machine}.
+The worker runs the layers of the block one after another, alternating the two buffers so that the output of one layer becomes the input of the next.
+This within-block ping-pong keeps only one input tensor and one output tensor resident at any instant, so the large expanded activation of an inverted residual block is produced and consumed entirely inside the worker without ever needing a third buffer.
+The worker infers each layer's operator from its configuration, treating a layer with equal input and output channels and a kernel larger than one as depthwise, a layer with a unit kernel as point-wise, and any other layer as a standard convolution.
+The coordinator supplies the per-worker depthwise padding as metadata, and the worker applies it by bounds-checking the input indices, which reproduces the zero-padding of the design exactly without assembling a padded buffer.
+When the block contains an even number of layers the final result lands in the input buffer, so the worker copies it once into the output buffer before sending.
+
+\paragraph{Cross-block cache and boundary reconstruction.}
+Cross-block data reuse of Section~\ref{sec:cross-block-data-reuse} requires the worker to keep its output across blocks and to rebuild its next input from that cache, which is the \emph{Receiving Task} step of Figure~\ref{fig:worker-state-machine} when reuse is active.
+After finishing a block the worker leaves its output slice in the output buffer and records the shape of the slice together with the index of the block that produced it.
+When the next task requests reuse, the coordinator sends only the missing boundary rows, and the worker reads them into a scratch region at the tail of the input buffer.
+The worker then rebuilds its full input band in the input buffer channel by channel, placing the received top boundary rows, the cached rows read from the output buffer, and the received bottom boundary rows in order.
+Before it trusts the cache, the worker checks that the recorded producer index matches the one named in the task descriptor.
+A mismatch means the cache is stale, so the worker raises an error and the coordinator falls back to a full transfer, which enforces at run time the invalidation rule that Section~\ref{sec:cross-conditions} derives.
+On the return path a task may ask the worker to send only its boundary rows instead of its full output.
+The worker then gathers the top and bottom boundary rows of every channel into a contiguous buffer and sends just those, so the interior of its slice never crosses the network.
 
 % Figure~\ref{fig:tbd} demonstrates the state machine of the worker runtime. It starts with the \verb|IDLE| state after establishing a connection with the coordinator. Then it waits and receives the task message in \verb|RECEIVE| state. After receiving, it transitions to \verb|COMPUTE| state to finish the task. Finally, it sends the result message back to the coordinator in \verb|SEND| state and returns to \verb|IDLE| state. The ping-pong buffer mentioned above is used to keep only one input tensor and one output tensor in the SRAM alive at any time, reducing the unnecessary memory footprint at runtime. 
 
@@ -129,9 +146,9 @@ Figure~\ref{fig:memory-layout} illustrates our memory layout. RAM1 and RAM2 hold
 \end{figure}
 
 
-The worker carries several convolution kernels. As shown in Figure~\ref{fig:kernel-coompare}, the kernel with smaller latency usually takes up more SRAM memory. Therefore, we implement the naive convolution kernel as well as the Im2Col + GeMM optimized kernel for workers to select during runtime. 
+The worker carries several convolution kernels. As shown in Figure~\ref{fig:kernel-coompare}, the kernel with smaller latency usually takes up more SRAM memory. Therefore, we implement the naive convolution kernel as well as the Im2Col + GeMM optimized kernel for workers to select during runtime~\cite{fastconv}. 
 Im2Col + GeMM kernel is the default kernel for workers to use. It utilizes the scratch space from the tail of the output buffer and falls back to the naive kernel when the space is insufficient.
-To further reduce the kernel latency, we also utilize the SIMD instructions of the Arm Cortex-M7 core with \verb|arm_dot_prod_q15| in CMSIS-DSP library [refs]. 
+To further reduce the kernel latency, we also utilize the SIMD instructions of the Arm Cortex-M7 core with \verb|arm_dot_prod_q15| in CMSIS-DSP library~\cite{cmsis-nn}. 
 
 
 \section{Communication Protocol}
@@ -189,14 +206,14 @@ The result message packs the compute time, the codec time, and the output size a
 
 \section{Validation}
 \label{sec:implementation-validation}
-To guarantee the numerical correctness of our distributed system, we implement a a Python simulation system that follows the same execution rule as the real hardware system.
+To guarantee the numerical correctness of our distributed system, we implement a Python simulation system that follows the same execution rule as the real hardware system.
 
-The simulation system takes the identical model manifests and input data as the real system. It simulates and compares the exact array equality of the output tensors during the inference. Any error in the output tensors will immediately be catched as a mismatch, making it easy to locate the error in the hardware at runtime.  
+The simulation system takes the identical model manifests and input data as the real system. It simulates and compares the exact array equality of the output tensors during the inference. Any error in the output tensors will immediately be reported as a mismatch, making it easy to locate the error in the hardware at runtime.  
 
 \section{Network Settings}
 \label{sec:implementation-miscellaneous}
 % \paragraph{TCP transport settings.}
-To further optimize the network performance, we employ two transport settings that significantly influence the latency of the TCP socket. The first is the Nagle's algorithm, which is a TCP optimization that reduces the number of small packets sent over the network by combining them into larger packets~\cite{tcp}. However, this can introduce additional latency in our system, as it may delay the transmission of small messages. Therefore, we disable Nagle's algorithm in the coordinator to ensure that each message is sent immediately without waiting for additional data to be combined.
+To further optimize the network performance, we employ two transport settings that significantly influence the latency of the TCP socket. The first is the Nagle's algorithm, which is a TCP optimization that reduces the number of small packets sent over the network by combining them into larger packets~\cite{tcp,nagle}. However, this can introduce additional latency in our system, as it may delay the transmission of small messages. Therefore, we disable Nagle's algorithm in the coordinator to ensure that each message is sent immediately without waiting for additional data to be combined.
 
 The second setting is quick acknowledgment option in workers.
 It enables the transport layer to send an immediate ACK rather than a delayed one during the network transmission~\cite{linux_tcp}.
