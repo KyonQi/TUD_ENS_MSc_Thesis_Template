@@ -1,9 +1,9 @@
 \chapter{Implementation}
 \label{chp:implementation}
 This chapter describes the implementation of the system design presented in Chapter~\ref{chp:system_design} on real hardware. 
-The framework consists of two codebases: a Python codebase that implements the preprocessing toolchains and evaluation scripts, and a real deployment codebase that realizes an asynchrnous Python coordinator with a cluster of Teensy 4.1 workers written in C++. 
+The framework consists of two codebases: a Python codebase that implements the preprocessing toolchains and evaluation scripts, and a real deployment codebase that realizes an asynchronous Python coordinator with a cluster of Teensy 4.1 workers written in C++. 
 We first describe the hardware platform employed in the experiments in Section~\ref{sec:implementation-hardware-platform}. 
-Section~\ref{sec:implementation-offline-toolchain} describes the offline toolchains that compile a pretained model into manifests and firmware. 
+Section~\ref{sec:implementation-offline-toolchain} describes the offline toolchains that compile a pretrained model into manifests and firmware. 
 Following this, Section~\ref{sec:implementation-worker-runtime} and Section~\ref{sec:implementation-communication-protocol} describe the runtime implementations of the coordinator and workers on the MCU. 
 We further explains how we validate the numerical correctness of the system in Section~\ref{sec:implementation-validation}. 
 Finally, we discuss some engineering details in Section~\ref{sec:implementation-miscellaneous}.
@@ -78,7 +78,7 @@ The coordinator parses this manifest as a starting point to schedule the executi
 % The quantization header holds the per-channel weight scales and zero-points, as well as the per-layer input and output quantization parameters. 
 % The model structural information is stored in the layer configuration header, which contains the number of input and output channels, kernel size, stride, and padding for each layer. 
 For the workers, the toolchain emits the three C headers in Table~\ref{tab:impl-manifests}, which are compiled into Flash as read-only arrays and looked up at runtime.
-Splitting the data across three headers separates the weights, the layer structure, and the quantisation parameters, so each can be accessed independently on the worker without parsing a general-purpose format at runtime.
+Splitting the data across three headers separates the weights, the layer structure, and the quantization parameters, so each can be accessed independently on the worker without parsing a general-purpose format at runtime.
 
 \section{Coordinator Runtime}
 \label{sec:implementation-coordinator-runtime}
@@ -145,9 +145,11 @@ The worker then gathers the top and bottom boundary rows of every channel into a
     \label{fig:kernel-coompare}
 \end{figure}
 
+\paragraph{Kernel Selection.}
+The worker carries several convolution kernels. As shown in Figure~\ref{fig:kernel-coompare}, the optimized kernels provide up to a $2.08\times$ speedup over the naive direct convolution on a $48\times8\times8$ input feature map. 
+Im2Col+GeMM reaches a $1.10\times$ speedup compared with naive convolution, while it takes around 213 KB of SRAM at runtime~\cite{highperf-conv,caffe}. Winograd is the fastest among all, but its scratch memory scales with the number of channels in the transform domain, requiring more than 345 KB buffer area during the inference~\cite{fastconv}. This grows even further on the expanded, high-channel activations of IRBs. On memory-constrained MCUs, such a footprint is impractical. 
 
-The worker carries several convolution kernels. As shown in Figure~\ref{fig:kernel-coompare}, the kernel with smaller latency usually takes up more SRAM memory. Therefore, we implement the naive convolution kernel as well as the Im2Col + GeMM optimized kernel for workers to select during runtime~\cite{fastconv}. 
-Im2Col + GeMM kernel is the default kernel for workers to use. It utilizes the scratch space from the tail of the output buffer and falls back to the naive kernel when the space is insufficient.
+Therefore, Im2Col+GeMM is the default kernel for workers to use, which captures most of the speedup while keeping the workspace small. It utilizes the scratch space from the tail of the output buffer and falls back to the naive kernel when the space is insufficient.
 To further reduce the kernel latency, we also utilize the SIMD instructions of the Arm Cortex-M7 core with \verb|arm_dot_prod_q15| in CMSIS-DSP library~\cite{cmsis-nn}. 
 
 

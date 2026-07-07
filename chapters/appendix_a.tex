@@ -1,4 +1,135 @@
-\chapter{APPENDIX TITLE}
+\chapter{Experiments across six MCUs}
 \label{app:appendix_a}
 
-Appendix body.
+% Appendix body.
+This appendix presents the complete per-block profiling results for all evaluated configurations with two to six MCUs, complementing the summary results presented in Chapter~\ref{chp:evaluation}.
+
+Figure~\ref{fig:results-comm-appendix} presents the complete communication overhead for configurations ranging from two to six MCUs. Figure~\ref{fig:results-memory-appendix} shows the coordinator's peak memory usage across the same range of worker counts, while Figure~\ref{fig:results-memory-worker-appendix} reports the corresponding peak memory usage of the worker MCUs.
+
+In each figure, subfigures~(a)--(d) correspond to the four representative models evaluated in this thesis. \emph{Baseline} denotes layer-wise execution without activation reuse, whereas \emph{Ours} denotes block-wise local execution with cross-block data reuse.
+
+
+\begin{figure}[t]
+    \centering
+        % MobileNetV2-0.35
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/comm/appendix/comm_mobilenetv2_035.pdf}
+        % \vspace{-2mm}
+        \caption{MobileNetV2}
+        \label{fig:comm-mbv2-appendix}
+      \end{subfigure}
+      % \hspace{1mm}
+        % MCUNet
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/comm/appendix/comm_mcunet.pdf}
+        % \vspace{-2mm}
+        \caption{MCUNet}
+        \label{fig:comm-mcunet-appendix}
+      \end{subfigure}
+      % \\ \vspace{1mm}
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/comm/appendix/comm_mnasnet_05.pdf}
+        % \vspace{-2mm}
+        \caption{MnasNet-0.5}
+        \label{fig:comm-mnasnet-appendix}
+      \end{subfigure}
+      % \hspace{1mm}
+        % ProxylessNAS-Mobile
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/comm/appendix/comm_proxylessnas_mobile.pdf}
+        % \vspace{-2mm}
+        \caption{ProxylessNAS}
+        \label{fig:comm-proxylessnas-appendix}
+      \end{subfigure}
+      % \hfill
+  \caption{Communication overhead.}
+  \label{fig:results-comm-appendix}
+\end{figure}
+
+
+
+\begin{figure}[t]
+    \centering
+        % MobileNetV2-0.35
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/appendix/coord_mobilenetv2_035.pdf}
+        % \vspace{-2mm}
+        \caption{MobileNetV2}
+        \label{fig:memory-mbv2-appendix}
+      \end{subfigure}
+      % \hspace{1mm}
+        % MCUNet
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/appendix/coord_mcunet.pdf}
+        % \vspace{-2mm}
+        \caption{MCUNet}
+        \label{fig:memory-mcunet-appendix}
+      \end{subfigure}
+      % \\ \vspace{1mm}
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/appendix/coord_mnasnet_05.pdf}
+        % \vspace{-2mm}
+        \caption{MnasNet-0.5}
+        \label{fig:memory-mnasnet-appendix}
+      \end{subfigure}
+      % \hspace{1mm}
+        % ProxylessNAS-Mobile
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/appendix/coord_proxylessnas_mobile.pdf}
+        % \vspace{-2mm}
+        \caption{ProxylessNAS}
+        \label{fig:memory-proxylessnas-appendix}
+      \end{subfigure}
+      % \hfill
+  \caption{The peak memory usage at the coordinator.}
+  \label{fig:results-memory-appendix}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+        % MobileNetV2-0.35
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/appendix/worker_mobilenetv2_035.pdf}
+        % \vspace{-2mm}
+        \caption{MobileNetV2}
+        \label{fig:memory-mbv2-worker-appendix}
+      \end{subfigure}
+      % \hspace{1mm}
+        % MCUNet
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/appendix/worker_mcunet.pdf}
+        % \vspace{-2mm}
+        \caption{MCUNet}
+        \label{fig:memory-mcunet-worker-appendix}
+      \end{subfigure}
+      % \\ \vspace{1mm}
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/appendix/worker_mnasnet_05.pdf}
+        % \vspace{-2mm}
+        \caption{MnasNet-0.5}
+        \label{fig:memory-mnasnet-worker-appendix}
+      \end{subfigure}
+      % \hspace{1mm}
+        % ProxylessNAS-Mobile
+      \begin{subfigure}{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figs/memory/appendix/worker_proxylessnas_mobile.pdf}
+        % \vspace{-2mm}
+        \caption{ProxylessNAS}
+        \label{fig:memory-proxylessnas-worker-appendix}
+      \end{subfigure}
+      % \hfill
+  \caption{The peak memory usage at the workers.}
+  \label{fig:results-memory-worker-appendix}
+\end{figure}
