@@ -1,6 +1,6 @@
 \chapter{Evaluation}
 \label{chp:evaluation}
-In this section, we evaluate the performance of our framework on real hardware. Section~\ref{sec:eval-exp-setup} first presents the experimental setup in detail. We first evaluate how much does our framework reduce the communication overhead in Section~\ref{sec:eval-comm-overhead}. Then we evaluate the end-to-end inference latency in Section~\ref{sec:eval-end2end-infer-latency}. Finally, we evaluate the peak memory usage of our framework in Section~\ref{sec:eval-peak-memory} and conduct an ablation study in Section~\ref{sec:eval-ablation-study}.
+In this section, we evaluate the performance of our framework on real hardware. Section~\ref{sec:eval-exp-setup} first presents the experimental setup in detail. We first evaluate how much our framework reduces the communication overhead in Section~\ref{sec:eval-comm-overhead}. Then we evaluate the end-to-end inference latency in Section~\ref{sec:eval-end2end-infer-latency}. Finally, we evaluate the peak memory usage of our framework in Section~\ref{sec:eval-peak-memory} and conduct an ablation study in Section~\ref{sec:eval-ablation-study}.
 
 
 
@@ -31,6 +31,13 @@ In this section, we evaluate the performance of our framework on real hardware. 
 
 % We evaluate our system on a testbed consisting of up to 8 Teensy 4.1 as workers with four representative CNNs for edge vision tasks. 
 \subsection{Hardware}
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.8\linewidth]{figs/testbed_new_8_MCU.pdf}
+    \caption{\textcolor{red}{check} testbed with 8 MCUs}
+    \label{fig:testbed-new}
+\end{figure}
+
 As described in Section~\ref{sec:implementation-hardware-platform}, the testbed consists of up to six Teensy 4.1 boards as workers and a TP-Link TL-SG116 gigabit switch to connect the workers and the coordinator. 
 
 \subsection{Models}
@@ -61,89 +68,80 @@ We compare our framework with a baseline that runs the same models in a naive la
 
 We evaluate from three aspects: communication overhead, end-to-end inference latency, and peak memory footprint. Communication overhead measures the total amount of data transferred between the coordinator and workers during inference. End-to-end inference latency measures the time taken from sending the input to receiving the output. Peak memory footprint measures the maximum memory used by the coordinator and workers at runtime, as memory is a critical resource on MCUs.
 
-\section{Communication Overhead}
-\label{sec:eval-comm-overhead}
-
 \begin{figure}[t]
     \centering
         % MobileNetV2-0.35
-      \begin{subfigure}{0.24\linewidth}
+      \begin{subfigure}{0.32\linewidth}
         \centering
-        \includegraphics[width=\linewidth]{figs/comm/column/comm_mobilenetv2_035.pdf}
+        \includegraphics[width=\linewidth]{figs/comm/mcu/comm_2mcu.pdf}
         % \vspace{-2mm}
-        \caption{MobileNetV2}
+        \caption{2 mcus}
         \label{fig:comm-mbv2}
       \end{subfigure}
       % \hspace{1mm}
         % MCUNet
-      \begin{subfigure}{0.24\linewidth}
+      \begin{subfigure}{0.32\linewidth}
         \centering
-        \includegraphics[width=\linewidth]{figs/comm/column/comm_mcunet.pdf}
+        \includegraphics[width=\linewidth]{figs/comm/mcu/comm_4mcu.pdf}
         % \vspace{-2mm}
-        \caption{MCUNet}
+        \caption{4 mcus}
         \label{fig:comm-mcunet}
       \end{subfigure}
       % \\ \vspace{1mm}
-      \begin{subfigure}{0.24\linewidth}
+      \begin{subfigure}{0.32\linewidth}
         \centering
-        \includegraphics[width=\linewidth]{figs/comm/column/comm_mnasnet_05.pdf}
+        \includegraphics[width=\linewidth]{figs/comm/mcu/comm_6mcu.pdf}
         % \vspace{-2mm}
-        \caption{MnasNet}
+        \caption{6 mcus}
         \label{fig:comm-mnasnet}
       \end{subfigure}
       % \hspace{1mm}
-        % ProxylessNAS-Mobile
-      \begin{subfigure}{0.24\linewidth}
-        \centering
-        \includegraphics[width=\linewidth]{figs/comm/column/comm_proxylessnas_mobile.pdf}
-        % \vspace{-2mm}
-        \caption{ProxylessNAS}
-        \label{fig:comm-proxylessnas}
-      \end{subfigure}
       % \hfill
   \caption{Communication overhead on 2, 4, and 6 workers (top to bottom rows) across the four models.}
   \label{fig:results-comm}
 \end{figure}
 
+\section{Communication Overhead}
+\label{sec:eval-comm-overhead}
 
 % \begin{figure}[t]
 %     \centering
 %         % MobileNetV2-0.35
-%       \begin{subfigure}{0.235\linewidth}
+%       \begin{subfigure}{0.24\linewidth}
 %         \centering
-%         \includegraphics[width=\linewidth]{figs/comm/comm_mobilenetv2_035.pdf}
+%         \includegraphics[width=\linewidth]{figs/comm/column/comm_mobilenetv2_035.pdf}
 %         % \vspace{-2mm}
-%         \caption{MobileNetV2-0.35}
+%         \caption{MobileNetV2}
 %         \label{fig:comm-mbv2}
 %       \end{subfigure}
-%       \hspace{1mm}
+%       % \hspace{1mm}
 %         % MCUNet
-%       \begin{subfigure}{0.235\linewidth}
+%       \begin{subfigure}{0.24\linewidth}
 %         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/comm/comm_mcunet.pdf}
+%         \includegraphics[width=\linewidth]{figs/comm/column/comm_mcunet.pdf}
 %         % \vspace{-2mm}
 %         \caption{MCUNet}
 %         \label{fig:comm-mcunet}
 %       \end{subfigure}
 %       % \\ \vspace{1mm}
-%       \begin{subfigure}{0.235\linewidth}
+%       \begin{subfigure}{0.24\linewidth}
 %         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/comm/comm_mnasnet_05.pdf}
+%         \includegraphics[width=\linewidth]{figs/comm/column/comm_mnasnet_05.pdf}
 %         % \vspace{-2mm}
-%         \caption{MnasNet-0.5}
+%         \caption{MnasNet}
 %         \label{fig:comm-mnasnet}
 %       \end{subfigure}
-%       \hspace{1mm}
+%       % \hspace{1mm}
 %         % ProxylessNAS-Mobile
-%       \begin{subfigure}{0.235\linewidth}
+%       \begin{subfigure}{0.24\linewidth}
 %         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/comm/comm_proxylessnas_mobile.pdf}
+%         \includegraphics[width=\linewidth]{figs/comm/column/comm_proxylessnas_mobile.pdf}
 %         % \vspace{-2mm}
-%         \caption{ProxylessNAS-Mobile}
+%         \caption{ProxylessNAS}
 %         \label{fig:comm-proxylessnas}
 %       \end{subfigure}
 %       % \hfill
-%   \caption{Communication overhead (collaborative inference on 4 MCUs).}
+%   \caption{Communication overhead on 2, 4, and 6 workers (top to bottom rows) across the four models.}
 %   \label{fig:results-comm}
 % \end{figure}
 
@@ -153,46 +151,36 @@ The communication overhead dominates these layers in the baseline system. Taking
 
 \emph{Ours} significantly reduces the communication overhead. Our block-wise local execution keeps the expanded activation inside the worker so that it never needs to cross the network. Our cross-block data reuse only requires the communication of the thin boundary rows between adjacent workers. Therefore, the per-block communication latency falls to a few milliseconds. On the first IRB of ProxylessNAS at four workers, the latency reduction is approximately 94\%. \emph{Ours} consistently outperforms the baseline across all models and layers, demonstrating the effectiveness of our framework in reducing communication overhead.
 
-\section{End-to-end Inference Latency}
-\label{sec:eval-end2end-infer-latency}
-
-% \begin{figure}[t]
-%     \centering
-%     \includegraphics[width=\linewidth]{figs/latency/latency_1x4.pdf}
-%     \caption{End-to-end latency of collaborative inference across different numbers of MCUs.}
-%     \label{fig:results-latency}
-% \end{figure}
-
 \begin{figure}[t]
     \centering
         % MobileNetV2-0.35
-      \begin{subfigure}{0.24\linewidth}
+      \begin{subfigure}{0.4\linewidth}
         \centering
         \includegraphics[width=\linewidth]{figs/latency/latency_mobilenetv2_035.pdf}
         % \vspace{-2mm}
         \caption{MobileNetV2}
         \label{fig:latency-mbv2}
       \end{subfigure}
-      % \hspace{1mm}
+      \hspace{5mm}
         % MCUNet
-      \begin{subfigure}{0.24\linewidth}
+      \begin{subfigure}{0.4\linewidth}
         \centering
         \includegraphics[width=\linewidth]{figs/latency/latency_mcunet.pdf}
         % \vspace{-2mm}
         \caption{MCUNet}
         \label{fig:latency-mcunet}
-      \end{subfigure}
+      \end{subfigure} \\
       % \\ \vspace{1mm}
-      \begin{subfigure}{0.24\linewidth}
+      \begin{subfigure}{0.4\linewidth}
         \centering
         \includegraphics[width=\linewidth]{figs/latency/latency_mnasnet_05.pdf}
         % \vspace{-2mm}
         \caption{MnasNet}
         \label{fig:memory-mnasnet}
       \end{subfigure}
-      % \hspace{1mm}
+      \hspace{5mm}
         % ProxylessNAS-Mobile
-      \begin{subfigure}{0.24\linewidth}
+      \begin{subfigure}{0.4\linewidth}
         \centering
         \includegraphics[width=\linewidth]{figs/latency/latency_proxylessnas_mobile.pdf}
         % \vspace{-2mm}
@@ -204,87 +192,92 @@ The communication overhead dominates these layers in the baseline system. Taking
     \label{fig:results-latency}
 \end{figure}
 
+\section{End-to-end Inference Latency}
+\label{sec:eval-end2end-infer-latency}
+
+% \begin{figure}[t]
+%     \centering
+%     \includegraphics[width=\linewidth]{figs/latency/latency_1x4.pdf}
+%     \caption{End-to-end latency of collaborative inference across different numbers of MCUs.}
+%     \label{fig:results-latency}
+% \end{figure}
+
+
+
 
 \begin{figure}[t]
     \centering
         % MobileNetV2-0.35
-      \begin{subfigure}{0.24\linewidth}
+      \begin{subfigure}{0.32\linewidth}
         \centering
-        \includegraphics[width=\linewidth]{figs/memory/column/coord_mobilenetv2_035.pdf}
+        \includegraphics[width=\linewidth]{figs/memory/mcu/coord_2mcu.pdf}
         % \vspace{-2mm}
-        \caption{MobileNetV2}
+        \caption{2 mcus}
         \label{fig:memory-mbv2}
       \end{subfigure}
       % \hspace{1mm}
         % MCUNet
-      \begin{subfigure}{0.24\linewidth}
+      \begin{subfigure}{0.32\linewidth}
         \centering
-        \includegraphics[width=\linewidth]{figs/memory/column/coord_mcunet.pdf}
+        \includegraphics[width=\linewidth]{figs/memory/mcu/coord_4mcu.pdf}
         % \vspace{-2mm}
-        \caption{MCUNet}
+        \caption{4 mcus}
         \label{fig:memory-mcunet}
       \end{subfigure}
       % \\ \vspace{1mm}
-      \begin{subfigure}{0.24\linewidth}
+      \begin{subfigure}{0.32\linewidth}
         \centering
-        \includegraphics[width=\linewidth]{figs/memory/column/coord_mnasnet_05.pdf}
+        \includegraphics[width=\linewidth]{figs/memory/mcu/coord_6mcu.pdf}
         % \vspace{-2mm}
-        \caption{MnasNet}
+        \caption{6 mcus}
         \label{fig:memory-mnasnet}
-      \end{subfigure}
-      % \hspace{1mm}
-        % ProxylessNAS-Mobile
-      \begin{subfigure}{0.24\linewidth}
-        \centering
-        \includegraphics[width=\linewidth]{figs/memory/column/coord_proxylessnas_mobile.pdf}
-        % \vspace{-2mm}
-        \caption{ProxylessNAS}
-        \label{fig:memory-proxylessnas}
       \end{subfigure}
       % \hfill
   \caption{The peak memory usage at the coordinator on 2, 4, and 6 workers (top to bottom rows) across the four models.}
   \label{fig:results-memory}
 \end{figure}
 
+
+
 % \begin{figure}[t]
 %     \centering
 %         % MobileNetV2-0.35
-%       \begin{subfigure}{0.48\linewidth}
+%       \begin{subfigure}{0.24\linewidth}
 %         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/latency/latency_mobilenetv2_035.pdf}
+%         \includegraphics[width=\linewidth]{figs/memory/column/coord_mobilenetv2_035.pdf}
 %         % \vspace{-2mm}
-%         \caption{MobileNetV2-0.35}
-%         \label{fig:latency-mbv2}
+%         \caption{MobileNetV2}
+%         \label{fig:memory-mbv2}
 %       \end{subfigure}
-%       \hspace{1mm}
+%       % \hspace{1mm}
 %         % MCUNet
-%       \begin{subfigure}{0.48\linewidth}
+%       \begin{subfigure}{0.24\linewidth}
 %         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/latency/latency_mcunet.pdf}
+%         \includegraphics[width=\linewidth]{figs/memory/column/coord_mcunet.pdf}
 %         % \vspace{-2mm}
 %         \caption{MCUNet}
-%         \label{fig:latency-mcunet}
+%         \label{fig:memory-mcunet}
 %       \end{subfigure}
-%       \\ \vspace{1mm}
-%       \begin{subfigure}{0.48\linewidth}
+%       % \\ \vspace{1mm}
+%       \begin{subfigure}{0.24\linewidth}
 %         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/latency/latency_mnasnet_05.pdf}
+%         \includegraphics[width=\linewidth]{figs/memory/column/coord_mnasnet_05.pdf}
 %         % \vspace{-2mm}
-%         \caption{MnasNet-0.5}
-%         \label{fig:latency-mnasnet}
+%         \caption{MnasNet}
+%         \label{fig:memory-mnasnet}
 %       \end{subfigure}
-%       \hspace{1mm}
+%       % \hspace{1mm}
 %         % ProxylessNAS-Mobile
-%       \begin{subfigure}{0.48\linewidth}
+%       \begin{subfigure}{0.24\linewidth}
 %         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/latency/latency_proxylessnas_mobile.pdf}
+%         \includegraphics[width=\linewidth]{figs/memory/column/coord_proxylessnas_mobile.pdf}
 %         % \vspace{-2mm}
-%         \caption{ProxylessNAS-Mobile}
-%         \label{fig:latency-proxylessnas}
+%         \caption{ProxylessNAS}
+%         \label{fig:memory-proxylessnas}
 %       \end{subfigure}
 %       % \hfill
-%   \caption{End-to-end latency of collaborative inference across different numbers of MCUs.}
-%   \label{fig:results-latency}
+%   \caption{The peak memory usage at the coordinator on 2, 4, and 6 workers (top to bottom rows) across the four models.}
+%   \label{fig:results-memory}
 % \end{figure}
 
 Figure~\ref{fig:results-latency} shows the end-to-end inference latency as the number of workers increases across different models. At four workers, \emph{ours} consistently outperforms the baseline. It reduces the latency of MobileNetV2-0.35 from 459 ms to 321 ms, MnasNet-0.5 from 920 ms to 486 ms, MCUNet-in4 from 938 ms to 552 ms, and ProxylessNAS from 1862 ms to 1174 ms, achieving a reduction between 30\% and 47\%. The saving is largest on the models that move the most intermediate data. These benefits come from eliminating communication with two mechanisms discussed above.
@@ -294,130 +287,81 @@ Another observation is that although the end-to-end inference latency falls as w
 \section{Peak Memory}
 \label{sec:eval-peak-memory}
 
-
-
 \begin{figure}[t]
     \centering
         % MobileNetV2-0.35
-      \begin{subfigure}{0.24\linewidth}
+      \begin{subfigure}{0.32\linewidth}
         \centering
-        \includegraphics[width=\linewidth]{figs/memory/column/worker_mobilenetv2_035.pdf}
+        \includegraphics[width=\linewidth]{figs/memory/mcu/worker_2mcu.pdf}
         % \vspace{-2mm}
-        \caption{MobileNetV2}
+        \caption{2 mcus}
         \label{fig:memory-mbv2-worker}
       \end{subfigure}
       % \hspace{1mm}
         % MCUNet
-      \begin{subfigure}{0.24\linewidth}
+      \begin{subfigure}{0.32\linewidth}
         \centering
-        \includegraphics[width=\linewidth]{figs/memory/column/worker_mcunet.pdf}
+        \includegraphics[width=\linewidth]{figs/memory/mcu/worker_4mcu.pdf}
         % \vspace{-2mm}
-        \caption{MCUNet}
+        \caption{4 mcus}
         \label{fig:memory-mcunet-worker}
       \end{subfigure}
       % \\ \vspace{1mm}
-      \begin{subfigure}{0.24\linewidth}
+      \begin{subfigure}{0.32\linewidth}
         \centering
-        \includegraphics[width=\linewidth]{figs/memory/column/worker_mnasnet_05.pdf}
+        \includegraphics[width=\linewidth]{figs/memory/mcu/worker_6mcu.pdf}
         % \vspace{-2mm}
-        \caption{MnasNet}
+        \caption{6 mcus}
         \label{fig:memory-mnasnet-worker}
       \end{subfigure}
       % \hspace{1mm}
-        % ProxylessNAS-Mobile
-      \begin{subfigure}{0.24\linewidth}
-        \centering
-        \includegraphics[width=\linewidth]{figs/memory/column/worker_proxylessnas_mobile.pdf}
-        % \vspace{-2mm}
-        \caption{ProxylessNAS}
-        \label{fig:memory-proxylessnas-worker}
-      \end{subfigure}
       % \hfill
   \caption{The peak memory usage at the workers on 2, 4, and 6 workers (top to bottom rows) across the four models.}
   \label{fig:results-memory-worker}
 \end{figure}
 
-% \begin{figure}[t]
-%     \centering
-%         % MobileNetV2-0.35
-%       \begin{subfigure}{0.48\linewidth}
-%         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/memory/memory_coord_mobilenetv2_035.pdf}
-%         % \vspace{-2mm}
-%         \caption{MobileNetV2-0.35}
-%         \label{fig:memory-mbv2}
-%       \end{subfigure}
-%       \hspace{1mm}
-%         % MCUNet
-%       \begin{subfigure}{0.48\linewidth}
-%         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/memory/memory_coord_mcunet.pdf}
-%         % \vspace{-2mm}
-%         \caption{MCUNet}
-%         \label{fig:memory-mcunet}
-%       \end{subfigure}
-%       \\ \vspace{1mm}
-%       \begin{subfigure}{0.48\linewidth}
-%         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/memory/memory_coord_mnasnet_05.pdf}
-%         % \vspace{-2mm}
-%         \caption{MnasNet-0.5}
-%         \label{fig:memory-mnasnet}
-%       \end{subfigure}
-%       \hspace{1mm}
-%         % ProxylessNAS-Mobile
-%       \begin{subfigure}{0.48\linewidth}
-%         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/memory/memory_coord_proxylessnas_mobile.pdf}
-%         % \vspace{-2mm}
-%         \caption{ProxylessNAS-Mobile}
-%         \label{fig:memory-proxylessnas}
-%       \end{subfigure}
-%       % \hfill
-%   \caption{The peak memory usage at the coordinator (collaborative inference on 4 MCUs).}
-%   \label{fig:results-memory}
-% \end{figure}
 
 % \begin{figure}[t]
 %     \centering
 %         % MobileNetV2-0.35
-%       \begin{subfigure}{0.48\linewidth}
+%       \begin{subfigure}{0.24\linewidth}
 %         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/memory/memory_worker_mobilenetv2_035.pdf}
+%         \includegraphics[width=\linewidth]{figs/memory/column/worker_mobilenetv2_035.pdf}
 %         % \vspace{-2mm}
-%         \caption{MobileNetV2-0.35}
+%         \caption{MobileNetV2}
 %         \label{fig:memory-mbv2-worker}
 %       \end{subfigure}
-%       \hspace{1mm}
+%       % \hspace{1mm}
 %         % MCUNet
-%       \begin{subfigure}{0.48\linewidth}
+%       \begin{subfigure}{0.24\linewidth}
 %         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/memory/memory_worker_mcunet.pdf}
+%         \includegraphics[width=\linewidth]{figs/memory/column/worker_mcunet.pdf}
 %         % \vspace{-2mm}
 %         \caption{MCUNet}
 %         \label{fig:memory-mcunet-worker}
 %       \end{subfigure}
-%       \\ \vspace{1mm}
-%       \begin{subfigure}{0.48\linewidth}
+%       % \\ \vspace{1mm}
+%       \begin{subfigure}{0.24\linewidth}
 %         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/memory/memory_worker_mnasnet_05.pdf}
+%         \includegraphics[width=\linewidth]{figs/memory/column/worker_mnasnet_05.pdf}
 %         % \vspace{-2mm}
-%         \caption{MnasNet-0.5}
+%         \caption{MnasNet}
 %         \label{fig:memory-mnasnet-worker}
 %       \end{subfigure}
-%       \hspace{1mm}
+%       % \hspace{1mm}
 %         % ProxylessNAS-Mobile
-%       \begin{subfigure}{0.48\linewidth}
+%       \begin{subfigure}{0.24\linewidth}
 %         \centering
-%         \includegraphics[width=0.8\linewidth]{figs/memory/memory_worker_proxylessnas_mobile.pdf}
+%         \includegraphics[width=\linewidth]{figs/memory/column/worker_proxylessnas_mobile.pdf}
 %         % \vspace{-2mm}
-%         \caption{ProxylessNAS-Mobile}
+%         \caption{ProxylessNAS}
 %         \label{fig:memory-proxylessnas-worker}
 %       \end{subfigure}
 %       % \hfill
-%   \caption{The peak memory usage at the workers (collaborative inference on 4 MCUs).}
+%   \caption{The peak memory usage at the workers on 2, 4, and 6 workers (top to bottom rows) across the four models.}
 %   \label{fig:results-memory-worker}
 % \end{figure}
+
 
 Figure~\ref{fig:results-memory} shows the coordinator peak memory per IRB on two, four, and six workers. In the baseline, the coordinator must materialize and buffer each intermediate feature map at runtime, so their peaks are determined by the largest feature maps of the model, which usually occur in the early high-resolution blocks. \emph{Ours} keeps these intermediates on the workers and returns only boundary rows, reducing the memory footprint of the workers significantly. 
 

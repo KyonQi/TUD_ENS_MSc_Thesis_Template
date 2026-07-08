@@ -75,8 +75,9 @@
 \newcommand{\reportDate}{July 7, 2026}
 \newcommand{\presentationDate}{July 14, 2026}
 \newcommand{\graduationCommittee}{
-prof. Qing Wang & Delft University of Technology \\
-prof. Jie Yang & Delft University of Technology \\
+Dr. Qing Wang (Chair) & Delft University of Technology \\
+Dr.  Jie Yang & Delft University of Technology \\
+Hao Liu & Delft University of Technology \\
 % ...
 }
 
@@ -97,8 +98,8 @@ prof. Jie Yang & Delft University of Technology \\
 % dr.\,Przemys{\l}aw Pawe{\l}czak & Delft University of Technology \\ 
 
 \newcommand{\reportAbstract}{
-The Tiny Machine Learning (TinyML) brings deep learning to microcontrollers (MCUs), but the few hundred kilobytes of SRAM available on these devices make deployment difficult. While model weights can reside in Flash, the intermediate activations generated at inference must fit in SRAM. For the efficient convolutional neural networks (CNNs) that dominate TinyML, such as MobileNetV2, MCUNet, MnasNet, and ProxylessNAS, it is the peak activation footprint rather than the model size that limits deployment. Because these networks are built from Inverted Residual Blocks (IRBs), whose expand–depthwise–project structure produces a large temporary activation inside each block that can exceed the SRAM of a single MCU.
-Distributing CNNs across several networked MCUs can aggregate their memory, but existing distributed runtimes communicate at layer or sub-layer boundaries. This turns the expanded activation inside each IRB into a network-level object that must traverse the network twice and be buffered in full at the coordinating device, creating a both communication and memory bottleneck.
+The Tiny Machine Learning (TinyML) brings deep learning to Microcontroller Units (MCUs), but the few hundred kilobytes of Static Random-Access Memory (SRAM) available on these devices make deployment difficult. While model weights can reside in Flash, the intermediate activations generated at inference must fit in SRAM. For the efficient Convolutional Neural Networks (CNNs) that dominate TinyML, such as MobileNetV2, MCUNet, MnasNet, and ProxylessNAS, it is the peak activation footprint rather than the model size that limits deployment. These networks are built from Inverted Residual Blocks (IRBs), whose expand–depthwise–project structure produces a large temporary activation inside each block that can exceed the SRAM of a single MCU.
+Distributing CNNs across several networked MCUs can aggregate their memory, but existing distributed runtimes communicate at layer or sub-layer boundaries. This turns the expanded activation inside each IRB into a network-level object that must traverse the network twice and be buffered in full at the coordinating device, creating both a communication and a memory bottleneck.
 
 This thesis presents a framework that transforms a standard CNN into a communication-efficient distributed execution across a cluster of networked MCUs. An offline stage quantizes the model to INT8 and compiles it into a communication-aware execution plan and per-worker manifests. An online stage executes the plan on a coordinator–worker cluster. There are two novel mechanisms in the system: \emph{block-wise local execution}, which keeps each expanded activation inside a worker, and \emph{cross-block data reuse}, which exchanges only the thin boundary rows between consecutive blocks. 
 % An overlap-ratio cost model is proposed to characterize when block-wise execution stops paying off and enables an adaptive per-block choice.
@@ -111,7 +112,7 @@ We implement the framework on a network of six MCUs and evaluate it on four repr
 % Did the thesis lead to a paper? 
 % e.g. The work presented in this thesis has lead to a paper which has been submitted to a conference for publication, pending peer-review
 %\newcommand{\reportPaper}{LINE ABOUT YOUR PUBLICATION GOES HERE}
-\newcommand{\reportPaper}{The work presented in this thesis has lead to a paper which has been submitted to a conference for publication, pending peer-review.}
+\newcommand{\reportPaper}{The work presented in this thesis has led to a paper which has been submitted to a conference for publication, pending peer-review.}
 
 
 % Information for pdflatex

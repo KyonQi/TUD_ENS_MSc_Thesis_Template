@@ -7,7 +7,7 @@
 TinyML brings a new paradigm for on-device intelligence, but the memory footprint of modern efficient CNNs can easily exceed the constrained memory of a single MCU, especially for models built with Inverted Residual Blocks (IRBs). 
 Although distributing one model across several networked MCUs aggregates their memory, existing distributed runtimes communicate at layer or sub-layer boundaries.
 This turns the expanded activation inside each IRB into a network-level object and creates a severe communication bottleneck.
-During the inference, the network spends time on transmitting tensors that were never meant to leave a local device, and the coordinator must buffer intermediate activations that are larger than any single MCU can hold.
+During the inference, the network spends time transmitting tensors that were never meant to leave a local device, and the coordinator must buffer intermediate activations that are larger than any single MCU can hold.
 
 To transform a standard CNN into a communication-efficient distributed execution across a cluster of networked MCUs, this thesis presents an inference framework that connects offline model preparation with online distributed execution.
 The offline preprocessing stage quantizes a standard CNN to INT8 and compiles it into a communication-aware execution plan together with per-worker manifests, encoding the spatial partitions, weight placement, quantization metadata, block grouping, residual dependencies, and boundary reuse conditions that a single-device model file does not carry.
@@ -32,7 +32,7 @@ Our system is a practical execution platform that lets a group of commodity MCUs
 \section{Future Work}
 \label{sec:future-work}
 
-\paragraph{Adaptive execution under varying link conditions.}
+\paragraph{Adaptive execution under varying network conditions.}
 The overlap-ratio model exposes a per-block choice between layer-wise and block-wise execution, controlled by a threshold that reflects the relative cost of computation and communication.
 Our evaluation fixed this threshold on a wired gigabit testbed.
 Wireless and bandwidth-constrained deployments shift the trade-off further towards fusion.

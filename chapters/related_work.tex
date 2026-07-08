@@ -17,12 +17,12 @@ Finally, Section~\ref{sec:bg-summary} summarises the gap the thesis addresses.
 \end{figure}
 
 
-Many efficient CNNs used in TinyML rely on IRBs~\cite{mobilenetv2,mobilenetv3,efficientnet,mcunet,micronets,proxylessnas}. 
+Many efficient CNNs used in TinyML rely on IRBs~\cite{mobilenetv2,mobilenetv3,efficientnet,mcunet,micronets,proxylessnas,resnet}. 
 An IRB follows an expand--depthwise--project structure: it first expands the channel dimension, processes the expanded representation with depthwise convolution, and then projects the feature map back to a compact output. 
 This design is compute-efficient, but it creates a large temporary activation inside the block. 
 
 As shown in Figure~\ref{fig:latency-breakdown}, this expanded activation exposes a significant communication bottleneck in distributed inference: communication becomes comparable to or larger than local computation after the expansion layer; in the depthwise stage, communication latency already exceeds computation latency. 
-It also stresses memory of MCUs: the MCU must receive, buffer, and re-dispatch the expanded intermediate activation at runtime, and residual connections may require it to keep the block input as well.
+It also stresses the memory of MCUs: the MCU must receive, buffer, and re-dispatch the expanded intermediate activation at runtime, and residual connections may require it to keep the block input as well.
 
 \section{Single-Device TinyML Inference}
 \label{sec:bg-single-tinyml}
@@ -34,8 +34,16 @@ Neural architecture search further produces models tailored to tight resource bu
 
 Besides the reduction in model size, existing TinyML systems also optimize the peak activation footprint at runtime through compression, memory-aware scheduling, and patch-based inference or model redesign~\cite{memory-compression,operator-reordering,mcunetv2,micronets}.
 Memory-aware scheduling reorders operators to shrink co-resident tensors, and patch-based inference splits the input spatially and processes one patch at a time~\cite{mcunetv2,operator-reordering}.
-However, patch-based execution, introduces overlapping receptive fields across consecutive layers, leading to a repeated computation and higher latency.
-Model redesign can avoid the peak altogether, but they require retraining and weaken the direct reuse of standard pretrained models.
+However, patch-based execution introduces overlapping receptive fields across consecutive layers, leading to a repeated computation and higher latency.
+Model redesigns can avoid the peak altogether, but they require retraining and weaken the direct reuse of standard pretrained models.
+
+
+\textcolor{red}{check}Beyond shrinking the model, a complementary line of work targets the peak activation footprint at run time, since on an MCU it is the largest set of co-resident tensors, not the model size, that decides feasibility. Static memory planning treats the buffers of a network as a lifetime-constrained allocation problem: an offline pass computes the liveness interval of every tensor and packs non-overlapping tensors into a single reusable arena, as adopted by production runtimes such as TensorFlow Lite Micro and CMSIS-NN~\cite{tflitemicro,cmsisnn}. Memory-aware scheduling goes further and reorders operators so that fewer large tensors are simultaneously live, directly lowering the peak~\cite{operator-reordering}. 
+Patch-based inference attacks the early high-resolution layers, where a single activation can exceed SRAM, by splitting the input spatially and streaming one patch at a time, at the cost of recomputation in overlapping receptive fields~\cite{mcunetv2}.
+Model-level redesigns flatten the peak by construction but require retraining and weaken the direct reuse of standard pretrained models~\cite{micronets}.
+
+All of these techniques assume a single device with one contiguous memory space and a statically planned schedule. Once inference is distributed, a new memory pressure appears that they do not model: a coordinating device must receive, buffer, and re-dispatch activations produced by its peers, so its peak memory is set not only by its own computation but by the volume of in-flight cross-device data. 
+This thesis carries the single-device concern for peak activation memory into the distributed setting and treats coordinator memory as a bounded quantity co-designed with the communication schedule (Chapter~\ref{chp:system_design}).
 
 % These efficient CNNs share a common building block, the Inverted Residual Block (IRB) introduced by MobileNetV2~\cite{sandler2018mobilenetv2}, which expands the channel dimension, applies a depthwise convolution, and projects back to a compact output.
 
@@ -73,7 +81,7 @@ Model redesign can avoid the peak altogether, but they require retraining and we
     % \vspace{-4mm}
     \caption{\textbf{Three categories of distributed CNN inference.}
     (a) Cloud--edge split offloads every layer beyond a single cut to a cloud server.
-    (b) Layer-wise partition (MoDNN) splits each layer spatially across peer devices that synchronize at layer boundaries.
+    (b) Layer-wise partition splits each layer spatially across peer devices that synchronize at layer boundaries.
     (c) Fine-grained partition fuses work across layers but exchanges data below the layer, at sub-layer boundaries.}
     \label{fig:related-work}
 \end{figure}
@@ -163,6 +171,30 @@ outputs, and the necessary boundary rows are exchanged.
 % A parallel line automates the partitioning decision itself.
 % PArtNNer adapts edge-cloud partitioning to the platform without prior hardware knowledge~\cite{ghosh2024partnner}, Kre{\ss} et al.\ automate inference partitioning for distributed embedded systems~\cite{kress2024automated}, and HiDP schedules hierarchical partitions on heterogeneous edge platforms~\cite{taufique2025hidp}.
 
+\section{Partitioning and Scheduling Decisions}
+\label{sec:bg-scheduling}
+\textcolor{red}{check} Orthogonal to the mechanism of distributed execution is the decision of how to partition a network and schedule its parts across devices. 
+A body of work casts this as an optimization over a cost model of per-layer compute and per-boundary communication. Early cloud-edge schemes select a single cut by comparing local computation against transmission cost~\cite{split-neurosurgeon}, and later systems widen the search space to include protocol choice and end-to-end latency~\cite{smartsplit}. For multi-device settings the decision becomes an assignment of layers or tiles to devices, and several frameworks automate it:
+PArtNNer adapts edge-cloud partitioning without prior hardware
+knowledge~\cite{partnner}, Kre{\ss} et al.\ automate inference partitioning for distributed embedded systems~\cite{kress}, and HiDP schedules hierarchical partitions across heterogeneous edge platforms~\cite{hidp}. 
+CoEdge adapts the partition to per-device compute and bandwidth budgets at run time~\cite{coedge}.
+
+These schedulers optimize \emph{where} to cut and \emph{how} to assign work, but they operate on top of a fixed communication granularity, typically a layer or sub-layer boundary, and take the tensor exchanged at that boundary as a given cost. 
+Two consequences follow for MCU clusters. First, because the granularity is fixed, no amount of cut-point search can prevent an expanded IRB activation from crossing the network when the chosen boundary falls inside a block; the optimizer can only relocate the cost, not remove it. Second, these formulations minimize latency or energy under a compute budget but do not treat the coordinator's memory as a constraint, because their target platforms have ample memory. 
+This thesis instead changes the boundary itself, so that the block structure rather than a search over layer cuts determines what is exchanged, and folds coordinator memory into the schedule as a first-class constraint.
+
+\section{Reducing Communication by Compressing Activations}
+\label{sec:bg-compression}
+
+\textcolor{red}{check} A distinct strategy for lowering communication cost does not change where the network is cut but compresses the activation that crosses the cut. 
+Because activations dominate the traffic in split and distributed inference, several classes of encoding have been applied to them. Feature quantization transmits activations at reduced precision, extending weight-quantization ideas to the wire and trading a small accuracy loss for narrower payloads~\cite{}. 
+Sparsification exploits the abundant zeros produced by ReLU and depthwise layers: only non-zero values and their indices are sent, encoded in a sparse format or with run-length and entropy coding~\cite{}. 
+For streaming and video workloads, delta or temporal encoding transmits only the change in an activation between consecutive inputs, so that static regions cost almost nothing to send~\cite{}. A more aggressive line inserts a learned bottleneck at the split point: an autoencoder-style encoder--decoder pair, trained jointly with the network, compresses the feature map into a compact code before transmission and reconstructs it on the far side~\cite{bottlenet,bottlenetpp}.
+
+These techniques are effective but carry three costs that matter on MCU clusters. First, most are lossy, so the accuracy budget must absorb the compression, and learned bottlenecks additionally require retraining or architectural modification, forfeiting the direct reuse of standard pretrained models that TinyML deployments depend on. Second, the encoder and decoder run on the same resource-constrained devices, and entropy decoding, dequantization, or a decoder network consume compute and energy on the receiving MCU, eroding part of the transmission saving. Third, and most important here, compression only reduces the size of whatever tensor the partitioning scheme has already decided to send; it does not question that choice. When the schedule exposes an expanded IRB activation to the network, compression can shrink that expanded tensor but cannot prevent it from being the tensor in flight.
+
+This thesis is complementary to, and largely orthogonal to, activation compression. 
+Rather than encoding a large tensor more compactly, it aligns the communication boundary with the block structure so that the expanded activation never leaves the device and only compact block inputs, projected outputs, and the necessary boundary rows are exchanged, without additional approximation and without retraining. Compression, where desired, can still be layered on top of these already-compact exchanges.
 
 
 \section{Summary}

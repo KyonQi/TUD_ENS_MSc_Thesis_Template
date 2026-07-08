@@ -5,9 +5,9 @@
 This appendix presents the complete per-block profiling results for all evaluated configurations with two to six MCUs, complementing the summary results presented in Chapter~\ref{chp:evaluation}.
 
 Figure~\ref{fig:results-comm-appendix} presents the complete communication overhead for configurations ranging from two to six MCUs. Figure~\ref{fig:results-memory-appendix} shows the coordinator's peak memory usage across the same range of worker counts, while Figure~\ref{fig:results-memory-worker-appendix} reports the corresponding peak memory usage of the worker MCUs.
-
 In each figure, subfigures~(a)--(d) correspond to the four representative models evaluated in this thesis. \emph{Baseline} denotes layer-wise execution without activation reuse, whereas \emph{Ours} denotes block-wise local execution with cross-block data reuse.
 
+These results demonstrate that \emph{ours}, with the proposed mechanisms, consistently outperforms the \emph{baseline} across all evaluated metrics, except for peak worker memory usage, which is inherently higher due to the nature of convolutional computation.
 
 \begin{figure}[t]
     \centering
@@ -46,7 +46,7 @@ In each figure, subfigures~(a)--(d) correspond to the four representative models
         \label{fig:comm-proxylessnas-appendix}
       \end{subfigure}
       % \hfill
-  \caption{Communication overhead.}
+  \caption{Communication overhead across 2 to 6 MCUs for the four evaluated models.}
   \label{fig:results-comm-appendix}
 \end{figure}
 
@@ -89,7 +89,7 @@ In each figure, subfigures~(a)--(d) correspond to the four representative models
         \label{fig:memory-proxylessnas-appendix}
       \end{subfigure}
       % \hfill
-  \caption{The peak memory usage at the coordinator.}
+  \caption{The peak memory usage at the coordinator across 2 to 6 MCUs for the four evaluated models.}
   \label{fig:results-memory-appendix}
 \end{figure}
 
@@ -130,6 +130,6 @@ In each figure, subfigures~(a)--(d) correspond to the four representative models
         \label{fig:memory-proxylessnas-worker-appendix}
       \end{subfigure}
       % \hfill
-  \caption{The peak memory usage at the workers.}
+  \caption{The peak memory usage at the workers across 2 to 6 MCUs for the four evaluated models.}
   \label{fig:results-memory-worker-appendix}
 \end{figure}

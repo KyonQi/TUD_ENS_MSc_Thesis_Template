@@ -5,7 +5,7 @@ The framework consists of two codebases: a Python codebase that implements the p
 We first describe the hardware platform employed in the experiments in Section~\ref{sec:implementation-hardware-platform}. 
 Section~\ref{sec:implementation-offline-toolchain} describes the offline toolchains that compile a pretrained model into manifests and firmware. 
 Following this, Section~\ref{sec:implementation-worker-runtime} and Section~\ref{sec:implementation-communication-protocol} describe the runtime implementations of the coordinator and workers on the MCU. 
-We further explains how we validate the numerical correctness of the system in Section~\ref{sec:implementation-validation}. 
+We further explain how we validate the numerical correctness of the system in Section~\ref{sec:implementation-validation}. 
 Finally, we discuss some engineering details in Section~\ref{sec:implementation-miscellaneous}.
 
 
@@ -20,7 +20,7 @@ Finally, we discuss some engineering details in Section~\ref{sec:implementation-
     \label{fig:testbed}
 \end{figure}
 
-Teensy 4.1 board is employed as the worker in our experiments. It is built with an NXP i.MX RT1062 microcontroller. The device has an Arm Cortex-M7 core running at 600 MHz with a hardware floating-point unit. The board has two 512 KB RAM banks and 8 MB Flash memory without a memory management unit. Network support is provided by an external Ethernet PHY chip with NativeEthernet library~\cite{NativeEthernet}. As shown in Figure~\ref{fig:testbed}, the testbed connects up to six boards to a single TP-Link TL-SG116 gigabit switch. To simplify profiling and data collection, a Linux PC serves as the coordinator, while the worker-side execution runs on MCUs.
+Teensy 4.1 board is employed as the worker in our experiments. It is built with an NXP i.MX RT1062 microcontroller. The device has an Arm Cortex-M7 core running at 600 MHz with a hardware floating-point unit. The board has two 512 KB RAM banks and 8 MB Flash memory without a memory management unit~\cite{teensy41}. Network support is provided by an external Ethernet PHY chip with NativeEthernet library~\cite{NativeEthernet}. As shown in Figure~\ref{fig:testbed}, the testbed connects up to six boards to a single TP-Link TL-SG116 gigabit switch. To simplify profiling and data collection, a Linux PC serves as the coordinator, while the worker-side execution runs on MCUs.
 
 \section{Software Platform}
 The whole MCU firmware is built with PlatformIO~\cite{platformio} with separate environments for development, on-device unit testing, and deployment. The development environment enables debugging and logging, while the on-device unit testing environment runs a suite of tests to validate the correctness of the convolution and linear kernels. The deployment environment allows for the automated script to flash the firmware onto the Teensy 4.1 boards, saving manual efforts. 
@@ -159,7 +159,7 @@ To further reduce the kernel latency, we also utilize the SIMD instructions of t
 \begin{figure}
     \centering
     \includegraphics[width=\linewidth]{figs/header.pdf}
-    \caption{General message layout defined in the communication protocol.}
+    \caption{General message frame. A fixed 16-byte header is followed by a variable-length payload of Len bytes.}
     \label{fig:impl-comm-protocol}
 \end{figure}
 

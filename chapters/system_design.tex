@@ -54,26 +54,20 @@ For a convolutional layer, the integer accumulator and the requantized output ar
     m &= \frac{s_{\mathrm{in}}s_w}{s_{\mathrm{out}}}, \label{eq:quantized-multiplier}
 \end{align}
 where $(s,z)$ denotes the scale and zero-point of the input, weight, and output tensors, respectively. 
-The multiplier $m$ is precomputed and stored per output channel, so that the runtime requantization in (\ref{eq:quantized-y}) reduces to a fixed-point multiply-and-shift with no floating-point division on the critical path. 
-The quantization parameters are calibrated on a small number of representative samples, which is sufficient to estimate the activation ranges needed for the input and output scales.
+The multiplier $m$ is precomputed and stored per output channel, so that the runtime requantization in Equation~\eqref{eq:quantized-y} reduces to a fixed-point multiply-and-shift with no floating-point division on the critical path. 
+The quantization parameters are calibrated on a small number of representative samples, which is sufficient to estimate the activation ranges needed for the input and output scales~\cite{imagenet}.
 
-For every layer of the CNN, the scales, zero-points, and precomputed
-multipliers, together with the structural metadata (e.g., layer type,
-input and output channels, kernel size, and residual links between layers) are
-extracted and serialized into a single JSON file. This file is consumed directly
-by the coordinator and is additionally emitted as C++ headers that are compiled
-into each worker's Flash, so that both sides operate from an identical
-description of the quantized model.
+For every layer of the CNN, the scales, zero-points, and precomputed multipliers, together with the structural metadata (e.g., layer type, input and output channels, kernel size, and residual links between layers) are extracted and serialized into a single JSON file. This file is consumed directly by the coordinator and is additionally emitted as C++ headers that are compiled into each worker's Flash, so that both sides operate from an identical description of the quantized model.
 
 \subsection{Planner}
 The planner compiles the quantized model graph into a communication-aware execution plan.
 For each block of layers, it decides whether the block can be executed locally by the workers as a single unit or has to fall back to a layer-wise strategy (Section~\ref{sec:block-wise-local-execution}), and whether the block's output feature map can be safely reused by the next block (Section~\ref{sec:cross-block-data-reuse}).
 These decisions are made offline and are strictly followed at runtime.
 
-Lines~\ref{ln:offline-start}--\ref{ln:offline-end} of Algorithm~\ref{alg:plan-execute} summarise the offline planning stage.
+Lines~\ref{ln:offline-start}--\ref{ln:offline-end} of Algorithm~\ref{alg:plan-execute} summarize the offline planning stage.
 The planner walks the blocks of $\mathcal{G}$ in order and creates one plan entry $p$ per block.
 For each block, it first determines the \emph{execution mode} (line~\ref{ln:block-mode}), which decides whether the block can be executed by the workers as a single locally-computed unit.
-It then evaluates whether \emph{cross-block reuse} can be enabled (line~\ref{ln:reuse-enable}), which the system can prevent repeated activations from being transferred across the network.
+It then evaluates whether \emph{cross-block reuse} can be enabled (line~\ref{ln:reuse-enable}), which allows the system to prevent repeated activations from being transferred across the network.
 The completed entry is appended to $\mathcal{P}$, and the resulting plan is what the runtime consumes.
 
 % maybe add more contents to the planner
@@ -242,7 +236,7 @@ It then settles into \emph{Idle}, ready to serve tasks.
 During the inference, the worker runs an \emph{event-driven loop}. On receiving a task it enters \emph{Receiving Task}, reconstructs the input activations from the received data, and loads the corresponding weights from Flash.
 After loading, it transitions to \emph{Computing}, where it selects the appropriate computation kernel based on the layer type and the available memory, and performs the computation.
 Finally, in \emph{Sending Result} it returns the output activations to the coordinator and falls back to \emph{Idle} to await the next task.
-When encountered a malformed or out-of-order task, the worker takes the \emph{Task Invalid} transition, which is reported to the coordinator rather than executed.
+When encountering a malformed or out-of-order task, the worker takes the \emph{Task Invalid} transition, which is reported to the coordinator rather than executed.
 
 
 
@@ -251,33 +245,7 @@ When encountered a malformed or out-of-order task, the worker takes the \emph{Ta
 \subsection{Protocol Design}
 \label{sec:protocol-design}
 
-\begin{table}[t]
-\centering
-\caption{Message types of the protocol.}
-\label{tab:message-type}
-\footnotesize
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{l l p{6.2cm}}
-% \hline\hline
-\hline
-\textbf{Message} & \textbf{Direction} & \textbf{Purpose} \\
-\hline
-\textsc{Register} & worker $\rightarrow$ coordinator &
-announce the device and report its clock frequency \\
-\textsc{Register Ack} & coordinator $\rightarrow$ worker &
-accept the worker and assign its logical identifier to the physical device \\
-\textsc{Task} & coordinator $\rightarrow$ worker &
-carry one plan entry as a descriptor followed by its tensor payload \\
-\textsc{Result} & worker $\rightarrow$ coordinator &
-return the on-device timing followed by the output rows \\
-\textsc{Error} & worker $\rightarrow$ coordinator &
-report a typed failure, such as a stale reuse cache or an exhausted buffer \\
-\textsc{Shutdown} & coordinator $\rightarrow$ worker &
-end the session \\
-\hline
-% \hline\hline
-\end{tabular}
-\end{table}
+
 
 
 To support the coordinator--worker architecture, we design a custom, lightweight protocol on top of TCP/IP.
@@ -313,6 +281,35 @@ Third, we adopt a strictly ordered transport strategy. Each worker holds at most
 one task at a time, and the offline plan already fixes a total order over the
 steps, so one task and one result per round is all the system
 needs. There is no reordering or in-flight windowing layered on top of TCP.
+
+\begin{table}[t]
+\centering
+\caption{Message types of the protocol.}
+\label{tab:message-type}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{l l p{6.2cm}}
+% \hline\hline
+\hline
+\textbf{Message} & \textbf{Direction} & \textbf{Purpose} \\
+\hline
+\textsc{Register} & worker $\rightarrow$ coordinator &
+announce the device and report its clock frequency \\
+\textsc{Register Ack} & coordinator $\rightarrow$ worker &
+accept the worker and assign its logical identifier to the physical device \\
+\textsc{Task} & coordinator $\rightarrow$ worker &
+carry one plan entry as a descriptor followed by its tensor payload \\
+\textsc{Result} & worker $\rightarrow$ coordinator &
+return the on-device timing followed by the output rows \\
+\textsc{Error} & worker $\rightarrow$ coordinator &
+report a typed failure, such as a stale reuse cache or an exhausted buffer \\
+\textsc{Shutdown} & coordinator $\rightarrow$ worker &
+end the session \\
+\hline
+% \hline\hline
+\end{tabular}
+\end{table}
+
 
 \paragraph{Message type.}
 As illustrated in Table~\ref{tab:message-type}, the protocol defines six message types grouped by inference phase.
@@ -370,12 +367,9 @@ The task descriptor is the materialization of one plan entry, and its fields fal
     \item \emph{Cross-block reuse} group carries the boundary geometry of Section~\ref{sec:cross-block-data-reuse}, informing workers whether to rebuild the input from the local cache, how many boundary rows are attached, which cached rows to use, which block must have produced the cache, and whether to return boundary rows only.
 \end{itemize}
 
-
-
-
 Four properties of this descriptor carry the design.
 It is \emph{self-contained}: a worker needs nothing beyond the descriptor, its payload, and its Flash-resident weights to execute a step.
-It is \emph{uniform}: every optimization field defaults to zero, so a plain layer-wise task simply leaves them unset, and the baseline and every combination of the two mechanisms run over the identical protocol---later comparisons between execution modes therefore carry no protocol differences.
+It is \emph{uniform}: every optimization field defaults to zero, so a plain layer-wise task simply leaves them unset, and the baseline and every combination of two mechanisms run over the identical protocol. Therefore there is no protocol differences when comparing different inference strategy.
 It is \emph{self-checking}: the expected producer index acts as a freshness token for the worker's cache; a worker whose cache does not match the token reports an error instead of computing on stale rows, and the coordinator falls back to a full transfer, realizing the invalidation rule of Section~\ref{sec:cross-conditions} at runtime.
 And it is \emph{cheap}: the descriptor spans tens of bytes against tensor payloads of kilobytes.
 
@@ -432,7 +426,7 @@ The byte-level encoding of these messages, and the discipline that keeps the coo
     \label{fig:sub_b}
   \end{subfigure}
   % \vspace{-3mm}
-\caption{Layer-wise comm. vs. block-wise local execution.}
+\caption{Comparison between layer-wise communication and block-wise local execution strategies.}
   \label{fig:block-wise-local-execution}
   % \vspace{-4mm}
 \end{figure}
@@ -503,13 +497,13 @@ The overlap ratio $\rho$ represents the fraction of the input feature map that i
 A higher overlap ratio indicates more redundant computation, which can offset the communication savings achieved by block-wise local execution. 
 The ideal $\rho=1$ indicates there is no overlap among the workers, whereas $\rho\to N$ is the worst case where all workers have to contain the entire input feature map.
 
-Combined~(\ref{eq:overlap}) with~(\ref{eq:overlap-ratio}), we can express the overlap ratio as a function of the kernel size $k$, stride $s$, and the number of workers $N$:
+Combining Equation~\eqref{eq:overlap} with Equation~\eqref{eq:overlap-ratio}, we can express the overlap ratio as a function of the kernel size $k$, stride $s$, and the number of workers $N$:
 \begin{equation}
     \rho(k, s, N) \approx 1 + \frac{(N-1)(k - s)}{H}.
     \label{eq:overlap-ratio-func}
 \end{equation}
 
-(\ref{eq:overlap-ratio-func}) demonstrates three key factors that affect the overlap ratio: 
+Equation~\eqref{eq:overlap-ratio-func} demonstrates three key factors that affect the overlap ratio: 
 \begin{itemize}
     \item Number of workers $N$: $\rho$ grows with the worker count, indicating that finer partitioning of the input feature map leads to more overlap and redundant computation.
     \item Kernel size $k$ and stride $s$: A larger kernel size or a smaller stride increases the number of overlapping rows due to the nature of the convolution, leading to a higher overlap ratio.
@@ -519,7 +513,7 @@ Combined~(\ref{eq:overlap}) with~(\ref{eq:overlap-ratio}), we can express the ov
 Therefore, the block-wise local execution effect is strongly position-dependent. For an early high-resolution block where $H=112$ with a $3\times3$ depthwise kernel on $N=4$ workers, the overlap ratio is $\rho\approx 1.05$, indicating a nearly free gain. However, for a deep low-resolution block where $H=7$ with a larger $5\times5$ kernel on $N=4$ workers, the overlap ratio is $\rho\approx 2.7$, indicating a significant amount of redundant computation that can easily offset the communication savings.
 
 \paragraph{Adaptive selection.}
-This position dependence motivates us to make a per-block decision on whether to apply block-wise local execution or fall back to layer-wise strategy. (\ref{eq:model-selection}) formalizes our adaptive selection of execution mode for each block $B$ based on the overlap ratio $\rho(B)$ and a manual tunable threshold $\tau$. If the overlap ratio is below the threshold, we apply block-wise local execution; otherwise, we revert to layer-wise strategy. 
+This position dependence motivates us to make a per-block decision on whether to apply block-wise local execution or fall back to layer-wise strategy. Equation~\eqref{eq:model-selection} formalizes our adaptive selection of execution mode for each block $B$ based on the overlap ratio $\rho(B)$ and a manual tunable threshold $\tau$. If the overlap ratio is below the threshold, we apply block-wise local execution; otherwise, we revert to layer-wise strategy. 
 \begin{equation}
     mode(B) = \begin{cases}
         \text{block-wise local execution}, & \text{if } \rho(B) \leq \tau, \\
@@ -542,7 +536,7 @@ The threshold can be determined empirically based on the specific model architec
 \begin{figure}[t]
     \center
     \includegraphics[width=\linewidth]{figs/fig_Overlapped_Compute.pdf}
-    \caption{Cross-block data reuse.}
+    \caption{Illustration of cross-block data reuse where only halo rows are exchanged.}
     % \vspace{-4mm}
     \label{fig:cross-block-data-reuse}
 \end{figure}
