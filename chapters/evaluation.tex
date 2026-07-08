@@ -33,7 +33,7 @@ In this section, we evaluate the performance of our framework on real hardware. 
 \subsection{Hardware}
 \begin{figure}[t]
     \centering
-    \includegraphics[width=0.8\linewidth]{figs/testbed_new_8_MCU.pdf}
+    \includegraphics[width=0.5\linewidth]{figs/testbed_new_8_MCU.pdf}
     \caption{\textcolor{red}{check} testbed with 8 MCUs}
     \label{fig:testbed-new}
 \end{figure}
@@ -68,6 +68,50 @@ We compare our framework with a baseline that runs the same models in a naive la
 
 We evaluate from three aspects: communication overhead, end-to-end inference latency, and peak memory footprint. Communication overhead measures the total amount of data transferred between the coordinator and workers during inference. End-to-end inference latency measures the time taken from sending the input to receiving the output. Peak memory footprint measures the maximum memory used by the coordinator and workers at runtime, as memory is a critical resource on MCUs.
 
+\textcolor{red}{check} We first evaluate the accuracy of qunatization after INT8 to see the drop-off.
+
+\begin{table}[t]
+    \caption{Evaluated models. All weights and activations are quantized to INT8 and stored in Flash and SRAM.}
+    \label{tab:eval-models}
+    \centering
+    \setlength{\tabcolsep}{8pt}
+    \resizebox{\columnwidth}{!}{%
+    \begin{tabular}{l c c c}
+        \toprule
+        \textbf{Model} & \textbf{Original} & \textbf{Quantized (INT8)} & \textbf{Change} \\
+        \midrule
+        MobileNetV2-0.35 & $78.25$\,\% & $74.85$\,\% & $-4.95$\,\% \\
+        MCUNet-IN4 & $75.57$\,\% & $64.03$\,\% & $-11.54$\,\% \\
+        MnasNet-0.5 & $77.78$\,\% & $70.90$\,\% & $-6.88$\,\% \\
+        ProxylessNAS-Mobile & $83.28$\,\% & $82.62$\,\% & $-0.66$\,\% \\
+        \bottomrule
+    \end{tabular}}
+\end{table}
+
+
+\section{Quantization Drop-off}
+\textcolor{red}{check}
+We first evaluate the accuracy drop-off after quantization. Table~\ref{tab:tbd} demonstrates the compar between the FP32 and INT8 inference. The pretrained FP32 model achieves xx\% accuracy in Imagenette while having xxx MB weight data. The PTQ model consistently achieves xx\% accuracy, only dropping xxx\%. It shows that PTQ only results in a small performance decrease and does not need to retrain the model compared with QAT saving lots of manual work.
+
+
+
+% \begin{table}[t]
+%     \centering
+%     \begin{tabular}{c|c|c|c}
+%         \textbf{Model} & \textbf{Original} & \textbf{Quantized (INT8)} & \textbf{Change} \\
+%          MobileNetV2-0.35 & 78.25\% & 74.85\% & -4.95\% \\
+%          MCUNet-IN4 & 50.65\% & 24.20\% & -26.45\% \\
+%          MnasNet-0.5 & 77.78\% & 70.90\% & -6.88\% \\
+%          ProxylessNAS-Mobile & 83.28\% & 82.62\% & -0.66\%
+%     \end{tabular}
+%     \caption{Accuracy}
+%     \label{tab:accuracy}
+% \end{table}
+
+
+\section{Communication Overhead}
+\label{sec:eval-comm-overhead}
+
 \begin{figure}[t]
     \centering
         % MobileNetV2-0.35
@@ -101,8 +145,8 @@ We evaluate from three aspects: communication overhead, end-to-end inference lat
   \label{fig:results-comm}
 \end{figure}
 
-\section{Communication Overhead}
-\label{sec:eval-comm-overhead}
+
+
 
 % \begin{figure}[t]
 %     \centering
@@ -150,6 +194,8 @@ We first break down inference to evaluate the communication cost. Figure~\ref{fi
 The communication overhead dominates these layers in the baseline system. Taking the four-worker configuration as an example, the communication latency of the first IRB reaches about 39 ms on MobileNetV2-0.35, 74 ms on MnasNet-0.5, 79 ms on MCUNet-in4, and 156 ms on ProxylessNAS. Since the output of each layer needs to be sent to the coordinator and then re-scattered to the workers, the network transfer of intermediate activations becomes a significant bottleneck. 
 
 \emph{Ours} significantly reduces the communication overhead. Our block-wise local execution keeps the expanded activation inside the worker so that it never needs to cross the network. Our cross-block data reuse only requires the communication of the thin boundary rows between adjacent workers. Therefore, the per-block communication latency falls to a few milliseconds. On the first IRB of ProxylessNAS at four workers, the latency reduction is approximately 94\%. \emph{Ours} consistently outperforms the baseline across all models and layers, demonstrating the effectiveness of our framework in reducing communication overhead.
+
+
 
 \begin{figure}[t]
     \centering
@@ -390,6 +436,37 @@ again in the early high-resolution blocks.
 \section{Ablation Study}
 \label{sec:eval-ablation-study}
 
+
+
+
+% \begin{table*}[t]
+% \centering
+% \caption{Ablation study of the proposed framework under the collaborative inference on 4 MCUs. (Communication is summed over the initial convolution and the first four blocks; Memory is the coordinator peak across blocks)}
+%   % \textbf{A}: block-wise local execution; \textbf{B}: cross-block data reuse; \emph{Ours} enables both.
+% \label{tab:eval-ablation}
+%   \setlength{\tabcolsep}{1pt}
+%       \resizebox{\columnwidth}{!}{
+%           \begin{tabular}{c cccc cccc cccc}
+%           \toprule
+%           & \multicolumn{4}{c}{Communication (ms)} & \multicolumn{4}{c}{End-to-end Inference Latency (ms)} & \multicolumn{4}{c}{Memory (KB)} \\
+%           \cmidrule(lr){2-5}\cmidrule(lr){6-9}\cmidrule(lr){10-13}
+%           Model  
+%           & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm} 
+%           & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm} 
+%           & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm}  \\
+%           \midrule
+%           MobileNetV2-0.35 & 87  & 20  & 52  & \textbf{15}  & 459  & 332  & 400  & \textbf{321}  & 735 & 343 & 318 & \textbf{158} \\
+%           MCUNet           & 284 & 56  & 120 & \textbf{30}  & 938  & 601  & 690  & \textbf{552}  & 412 & 275 & 412 & \textbf{112} \\
+%           MnasNet-0.5      & 253 & 64  & 113 & \textbf{38}  & 920  & 539  & 651  & \textbf{486}  & 392 & 343 & 343 & \textbf{158} \\
+%           ProxylessNAS     & 432 & 107 & 159 & \textbf{52}  & 1862 & 1282 & 1368 & \textbf{1174} & 784 & 539 & 686 & \textbf{294} \\
+%           \bottomrule
+%           \end{tabular}
+%       }
+% \end{table*}
+
+Finally, we separate and evaluate the contribution of two mechanisms (\emph{A:block-wise local execution} and \emph{B:cross-block data reuse}) through an ablation study on four workers. We conduct the study with four ablated configurations: ``\emph{Ours w/o A,B}'' disables both mechanisms and is equivalent to the baseline; ``\emph{Ours w/o A}'' disables block-wise local execution but keeps cross-block data reuse; ``\emph{Ours w/o B}'' disables cross-block data reuse but keeps block-wise local execution; and ``\emph{Ours}'' enables both mechanisms.
+
+
 \begin{table}[t]
 \centering
 \caption{Ablation study of the proposed framework under collaborative inference on 4 MCUs. Communication is summed over the initial convolution and the first four blocks; Memory is the coordinator peak across blocks.}
@@ -423,33 +500,6 @@ again in the early high-resolution blocks.
 \end{tabular}
 \end{table}
 
-
-% \begin{table*}[t]
-% \centering
-% \caption{Ablation study of the proposed framework under the collaborative inference on 4 MCUs. (Communication is summed over the initial convolution and the first four blocks; Memory is the coordinator peak across blocks)}
-%   % \textbf{A}: block-wise local execution; \textbf{B}: cross-block data reuse; \emph{Ours} enables both.
-% \label{tab:eval-ablation}
-%   \setlength{\tabcolsep}{1pt}
-%       \resizebox{\columnwidth}{!}{
-%           \begin{tabular}{c cccc cccc cccc}
-%           \toprule
-%           & \multicolumn{4}{c}{Communication (ms)} & \multicolumn{4}{c}{End-to-end Inference Latency (ms)} & \multicolumn{4}{c}{Memory (KB)} \\
-%           \cmidrule(lr){2-5}\cmidrule(lr){6-9}\cmidrule(lr){10-13}
-%           Model  
-%           & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm} 
-%           & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm} 
-%           & w/o A,B & \hspace{2mm}w/o B\hspace{2mm} & \hspace{2mm}w/o A\hspace{2mm} & \hspace{2mm}\textbf{Ours}\hspace{2mm}  \\
-%           \midrule
-%           MobileNetV2-0.35 & 87  & 20  & 52  & \textbf{15}  & 459  & 332  & 400  & \textbf{321}  & 735 & 343 & 318 & \textbf{158} \\
-%           MCUNet           & 284 & 56  & 120 & \textbf{30}  & 938  & 601  & 690  & \textbf{552}  & 412 & 275 & 412 & \textbf{112} \\
-%           MnasNet-0.5      & 253 & 64  & 113 & \textbf{38}  & 920  & 539  & 651  & \textbf{486}  & 392 & 343 & 343 & \textbf{158} \\
-%           ProxylessNAS     & 432 & 107 & 159 & \textbf{52}  & 1862 & 1282 & 1368 & \textbf{1174} & 784 & 539 & 686 & \textbf{294} \\
-%           \bottomrule
-%           \end{tabular}
-%       }
-% \end{table*}
-
-Finally, we separate and evaluate the contribution of two mechanisms (\emph{A:block-wise local execution} and \emph{B:cross-block data reuse}) through an ablation study on four workers. We conduct the study with four ablated configurations: ``\emph{Ours w/o A,B}'' disables both mechanisms and is equivalent to the baseline; ``\emph{Ours w/o A}'' disables block-wise local execution but keeps cross-block data reuse; ``\emph{Ours w/o B}'' disables cross-block data reuse but keeps block-wise local execution; and ``\emph{Ours}'' enables both mechanisms.
 
 Table~\ref{tab:eval-ablation} illustrates the results of the ablation study. The communication sums the total communication delay of the initial convolution and the first four IRBs, and the memory is the coordinator peak memory across all blocks. It is clear that enabling `A' (\emph{w/o B}) alone cuts the early-block communication by 75\% to 80\% and shortens the end-to-end inference latency by 28\% to 40\%, since it removes the transfer of the expanded activation from the critical path. It also lowers the coordinator peak memory by 12\% to 53\% by keeping the intermediate feature maps on the workers. 
 

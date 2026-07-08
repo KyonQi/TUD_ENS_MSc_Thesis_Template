@@ -163,7 +163,7 @@ To further reduce the kernel latency, we also utilize the SIMD instructions of t
     \label{fig:impl-comm-protocol}
 \end{figure}
 
-
+\textcolor{red}{check}
 This section gives the byte-level realisation of the protocol whose message vocabulary and task descriptor were designed in Section~\ref{sec:protocol-design}.
 Every message travels as a fixed sixteen-byte header followed by a typed payload, all little-endian.
 The header consists of a four-byte magic number that the receiver checks to resynchronise the stream, a one-byte message type, a one-byte worker identifier, a four-byte payload length, and six reserved bytes.
@@ -208,9 +208,34 @@ The result message packs the compute time, the codec time, and the output size a
 
 \section{Validation}
 \label{sec:implementation-validation}
-To guarantee the numerical correctness of our distributed system, we implement a Python simulation system that follows the same execution rule as the real hardware system.
+\textcolor{red}{check}
+A spatial partition that miscalculates a single row, mistreats the residual cache, or shifts a wrong requantization will result in a wrong number and propagate through every later layer, creating a totally wrong prediction. 
+Therefore, the distributed framework must be numerically identical to the single device system before any later optimizations. 
+We implement a Python bit-exact array equality simulation system follows the same execution rule as the real hardware system.
+We organize the validation into four levels that each is responsible for one type of error.
 
-The simulation system takes the identical model manifests and input data as the real system. It simulates and compares the exact array equality of the output tensors during the inference. Any error in the output tensors will immediately be reported as a mismatch, making it easy to locate the error in the hardware at runtime.  
+\paragraph{Kernel validation.} 
+The lowest level validates the compute kernels respectively. We utilize the toolchain in PlatformIO to run a suite of on-device unit-testing on the Teensy 4.1, comparing each convolution and linear kernel against standard reference output. 
+It ensures the check for all arithmetic error in any kernel, such as Im2Col construction, the SIMD dot-product, or the padding logic, so that any fault inside a single kernel could be reported in advance.
+
+\paragraph{Manifest extraction.} 
+The second level validates the offline toolchain that compiles a pretrained model into the manifests shown in Table~\ref{tab:impl-manifests}. 
+After extraction, a verification pass goes through the source quantized model by layer and compares every value the toolchain emitted against the model it was derived from. 
+The weight and all quantized parameters should match exactly. Passing this level guarantees the coordinator manifest and the worker headers faithfully encode the original pretrained model.
+
+\paragraph{Mechanism equivalence.} 
+The third level validates the two optimization mechanisms preserve the exact same output of the original model. 
+We run the same quantized model through the coordinator twice over a set of validation images, once under the layer-wise baseline and once with block-wise local execution and cross-block data reuse enabled, and require the two INT8 output tensors to be identical for every input. 
+Bit-exact equality confirms that the mechanisms only change the execution strategy and the communication pattern, and does not influence the result.
+
+\paragraph{End-to-end system.}
+The final level validates the real deployment against an end-to-end Python simulator that follows the exact same execution rule as the hardware. 
+The simulator consumes the identical manifests and input data as the real system and reproduces its block schedule, boundary reconstruction, and requantization step for step. During a hardware run the output tensors are compared for exact array equality against the simulator, and any divergence is reported immediately as a mismatch.
+Because the simulator is a bit-exact system, any fault in the network framing, the ping-pong buffering, or the boundary reconstruction on the MCU can be easily located in the implementation, saving lots of manual effort to locate the rror in the hardware at runtime.
+
+% To guarantee the numerical correctness of our distributed system, we implement a Python simulation system that follows the same execution rule as the real hardware system.
+
+% The simulation system takes the identical model manifests and input data as the real system. It simulates and compares the exact array equality of the output tensors during the inference. Any error in the output tensors will immediately be reported as a mismatch, making it easy to locate the error in the hardware at runtime.  
 
 \section{Network Settings}
 \label{sec:implementation-miscellaneous}
